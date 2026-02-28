@@ -169,7 +169,7 @@ const Game = () => {
           : 'w-full h-full'
           }`}
       >
-        {screen === 'menu' && <MainMenu onStart={handleStart} initialTab={initialMenuTab} />}
+        {screen === 'menu' && <MainMenu onStart={handleStart} initialTab={initialMenuTab} hasPass={hasPass} onRequestMint={() => setIsLocked(true)} />}
         {screen === 'gameOver' && stats && (
           <GameOver stats={stats} onRestart={handleRestart} onMenu={() => handleMenu('play')} onViewRank={() => handleMenu('rank')} />
         )}

@@ -43,12 +43,36 @@ registerMwa({
     onWalletNotFound: createDefaultWalletNotFoundHandler(),
 });
 
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
+import {
+    SolanaMobileWalletAdapter,
+    createDefaultAddressSelector,
+    createDefaultAuthorizationResultCache,
+    createDefaultWalletNotFoundHandler as smwaCreateDefaultWalletNotFoundHandler
+} from '@solana-mobile/wallet-adapter-mobile';
+
 export const SolanaWrapper = ({ children }: { children: React.ReactNode }) => {
     const endpoint = useMemo(() => SOLANA_RPC_URL, []);
 
-    // Pass an empty array — registerMwa() above already injected MWA wallets
-    // into the global Wallet Standard registry, so WalletProvider finds them automatically.
-    const wallets = useMemo(() => [], []);
+    // Pass an array of popular wallets including Solana Mobile Wallet Adapter
+    // MWA is auto-registered via registerMwa, but using SMWA class forces compatibility
+    // with certain older dApp browsers.
+    const wallets = useMemo(() => [
+        new SolanaMobileWalletAdapter({
+            addressSelector: createDefaultAddressSelector(),
+            appIdentity: {
+                name: 'Token Frenzy',
+                uri: 'https://tokenfrenzy.app',
+                icon: 'favicon.ico',
+            },
+            authorizationResultCache: createDefaultAuthorizationResultCache(),
+            cluster: 'mainnet-beta',
+            onWalletNotFound: smwaCreateDefaultWalletNotFoundHandler(),
+        }),
+        new PhantomWalletAdapter(),
+        new SolflareWalletAdapter(),
+    ], []);
 
     return (
         <ConnectionProvider endpoint={endpoint}>
