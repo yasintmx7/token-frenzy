@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Zap, Flame, Waves, Gamepad2, Trophy, User, Paintbrush } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
@@ -65,6 +65,24 @@ const MainMenu = ({ onStart, initialTab = 'play' }: MainMenuProps) => {
       setVisible(true);
     }
   };
+
+  // Report active tab state to Android bridge and register back handler
+  useEffect(() => {
+    if (activeTab === 'play') {
+      window.Android?.setState('home');
+      // On play/home tab: no sub-nav back needed
+      window.handleAndroidBack = undefined;
+    } else {
+      // On sub-tab: report subtab state and register back → return to play tab
+      window.Android?.setState('subtab');
+      window.handleAndroidBack = () => {
+        setActiveTab('play');
+      };
+    }
+    return () => {
+      window.handleAndroidBack = undefined;
+    };
+  }, [activeTab]);
 
   return (
     <div className="h-full flex flex-col relative overflow-hidden bg-background">
@@ -182,9 +200,9 @@ const MainMenu = ({ onStart, initialTab = 'play' }: MainMenuProps) => {
           </div>
         )}
 
-        {/* PROFILE TAB */}
+        {/* PROFILE TAB — no scroll, fits one screen */}
         {activeTab === 'profile' && (
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pt-4 pb-4 animate-fade-in">
+          <div className="flex-1 overflow-hidden px-4 pt-3 pb-2 flex flex-col justify-center animate-fade-in">
             <ProfileDashboard
               progress={progress}
               onOpenLegal={(type) => setLegalModal({ isOpen: true, type })}
@@ -233,7 +251,7 @@ const MainMenu = ({ onStart, initialTab = 'play' }: MainMenuProps) => {
 // ─── Profile Dashboard ────────────────────────────────────────────────────────
 
 import { useWallet as useWalletHook } from '@solana/wallet-adapter-react';
-import { Copy, CheckCircle, TrendingUp, Target, Activity, Medal, ShieldCheck, Shield, FileText } from 'lucide-react';
+import { Copy, CheckCircle, TrendingUp, Target, Activity, Medal, ShieldCheck, Shield, FileText, ChevronRight } from 'lucide-react';
 import { shortenAddress } from '@/lib/storage';
 
 function ProfileDashboard({ progress, onOpenLegal }: {
@@ -244,10 +262,10 @@ function ProfileDashboard({ progress, onOpenLegal }: {
   const [copied, setCopied] = useState(false);
 
   const getRank = (score: number) => {
-    if (score > 100000) return { name: 'TOKEN OVERLORD', color: 'hsl(var(--neon-purple))' };
-    if (score > 50000) return { name: 'GRAND MASTER', color: 'hsl(var(--neon-pink))' };
-    if (score > 10000) return { name: 'PRO CUTTER', color: 'hsl(var(--neon-cyan))' };
-    return { name: 'RECRUIT', color: 'hsl(var(--muted-foreground))' };
+    if (score > 100000) return { name: 'TOKEN OVERLORD', color: '#c084fc', glow: 'rgba(192,132,252,0.25)' };
+    if (score > 50000) return { name: 'GRAND MASTER', color: '#f472b6', glow: 'rgba(244,114,182,0.25)' };
+    if (score > 10000) return { name: 'PRO CUTTER', color: '#22d3ee', glow: 'rgba(34,211,238,0.25)' };
+    return { name: 'RECRUIT', color: '#94a3b8', glow: 'rgba(148,163,184,0.15)' };
   };
   const rank = getRank(progress.totalScore);
 
@@ -259,82 +277,118 @@ function ProfileDashboard({ progress, onOpenLegal }: {
     }
   };
 
+  const displayName = connected && publicKey
+    ? shortenAddress(publicKey.toString())
+    : 'GUEST PLAYER';
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* Identity card */}
-      <div className="glass-panel-strong rounded-3xl p-5 flex items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-          <User className="w-7 h-7 text-white" />
+    <div className="flex flex-col gap-3">
+
+      {/* ── Header card ── */}
+      <div
+        className="rounded-2xl p-4 flex items-center gap-4"
+        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        {/* Avatar with status dot */}
+        <div className="relative flex-shrink-0">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center"
+            style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
+          >
+            <User className="w-7 h-7 text-white" />
+          </div>
+          {connected && (
+            <div
+              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-black animate-pulse"
+              style={{ background: '#4ade80' }}
+            />
+          )}
         </div>
+
+        {/* Identity */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-display font-black text-foreground truncate">
-            {connected && publicKey ? shortenAddress(publicKey.toString()) : 'GUEST PLAYER'}
+          <p className="text-sm font-display font-black text-white leading-tight truncate">
+            {displayName}
           </p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-[9px] font-display font-bold tracking-wider px-2 py-0.5 rounded-full bg-white/5"
-              style={{ color: rank.color }}>
+          <div className="flex items-center gap-2 mt-1.5">
+            <span
+              className="text-[9px] font-display font-bold tracking-widest px-2 py-0.5 rounded-full"
+              style={{ color: rank.color, background: rank.glow, border: `1px solid ${rank.color}40` }}
+            >
               {rank.name}
             </span>
             {connected && publicKey && (
-              <button onClick={copyAddress} className="text-muted-foreground p-0.5">
-                {copied ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+              <button onClick={copyAddress} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
+                {copied
+                  ? <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+                  : <Copy className="w-3.5 h-3.5 text-white/40" />}
               </button>
             )}
           </div>
         </div>
-        {connected && (
-          <div className="w-2.5 h-2.5 rounded-full bg-green-400 flex-shrink-0 animate-pulse" />
-        )}
       </div>
 
-      {/* Stats grid 2x2 */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* ── Stats 2×2 grid — big readable numbers ── */}
+      <div className="grid grid-cols-2 gap-2">
         {[
-          { icon: TrendingUp, label: 'Score', value: progress.totalScore.toLocaleString(), color: 'hsl(var(--neon-purple))' },
-          { icon: Target, label: 'Slices', value: progress.totalTokensSliced.toLocaleString(), color: 'hsl(var(--neon-cyan))' },
-          { icon: Medal, label: 'Best Combo', value: `${progress.bestCombo}x`, color: 'hsl(var(--neon-amber))' },
-          { icon: Activity, label: 'Games', value: String(progress.gamesPlayed), color: 'hsl(var(--neon-pink))' },
-        ].map(({ icon: Icon, label, value, color }) => (
-          <div key={label} className="glass-panel rounded-2xl p-4">
-            <Icon className="w-4 h-4 mb-2" style={{ color }} />
-            <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-display">{label}</p>
-            <p className="text-xl font-display font-black text-foreground tabular-nums">{value}</p>
+          { icon: TrendingUp, label: 'TOTAL SCORE', value: progress.totalScore.toLocaleString(), color: '#c084fc', bg: 'rgba(192,132,252,0.09)', border: 'rgba(192,132,252,0.2)' },
+          { icon: Target, label: 'SLICED', value: progress.totalTokensSliced.toLocaleString(), color: '#22d3ee', bg: 'rgba(34,211,238,0.09)', border: 'rgba(34,211,238,0.2)' },
+          { icon: Medal, label: 'BEST COMBO', value: `${progress.bestCombo}×`, color: '#fbbf24', bg: 'rgba(251,191,36,0.09)', border: 'rgba(251,191,36,0.2)' },
+          { icon: Activity, label: 'GAMES PLAYED', value: String(progress.gamesPlayed), color: '#f472b6', bg: 'rgba(244,114,182,0.09)', border: 'rgba(244,114,182,0.2)' },
+        ].map(({ icon: Icon, label, value, color, bg, border }) => (
+          <div key={label} className="rounded-xl p-3" style={{ background: bg, border: `1px solid ${border}` }}>
+            <div className="flex items-center gap-1.5 mb-1">
+              <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />
+              <p className="text-[8px] font-display font-bold tracking-widest uppercase truncate" style={{ color }}>
+                {label}
+              </p>
+            </div>
+            <p className="text-2xl font-display font-black text-white tabular-nums leading-none">
+              {value}
+            </p>
           </div>
         ))}
       </div>
 
-      {/* Wallet connect shortcut */}
+      {/* ── Wallet nudge (guest only) ── */}
       {!connected && (
-        <div className="glass-panel rounded-2xl p-4 flex items-center gap-3 border border-purple-500/20">
-          <ShieldCheck className="w-5 h-5 text-purple-400 flex-shrink-0" />
+        <div
+          className="rounded-xl p-3 flex items-center gap-3"
+          style={{
+            background: 'linear-gradient(135deg,rgba(147,51,234,0.15),rgba(236,72,153,0.15))',
+            border: '1px solid rgba(147,51,234,0.3)',
+          }}
+        >
+          <ShieldCheck className="w-5 h-5 flex-shrink-0" style={{ color: '#c084fc' }} />
           <div>
-            <p className="text-xs font-display font-bold text-foreground">CONNECT WALLET</p>
-            <p className="text-[9px] text-muted-foreground">Link your Solana wallet to save scores</p>
+            <p className="text-xs font-display font-black text-white">CONNECT WALLET</p>
+            <p className="text-[9px] text-white/50 mt-0.5">Link your Solana wallet to save scores</p>
           </div>
         </div>
       )}
 
-      {/* Legal */}
-      <div className="flex gap-3">
+      {/* ── Legal — full-width stacked, always readable ── */}
+      <div className="flex flex-col gap-2">
         <button
           onClick={() => onOpenLegal('privacy')}
-          className="flex-1 glass-panel rounded-2xl p-3 flex items-center gap-2 hover:bg-white/5 transition-all"
+          className="w-full rounded-xl px-4 py-3 flex items-center gap-3 transition-all active:scale-[0.98]"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
         >
-          <Shield className="w-4 h-4 text-blue-400 flex-shrink-0" />
-          <span className="text-[10px] font-display font-bold text-foreground">PRIVACY</span>
+          <Shield className="w-4 h-4 flex-shrink-0 text-blue-400" />
+          <span className="text-xs font-display font-bold text-white">Privacy Policy</span>
+          <ChevronRight className="w-3.5 h-3.5 text-white/30 ml-auto flex-shrink-0" />
         </button>
         <button
           onClick={() => onOpenLegal('terms')}
-          className="flex-1 glass-panel rounded-2xl p-3 flex items-center gap-2 hover:bg-white/5 transition-all"
+          className="w-full rounded-xl px-4 py-3 flex items-center gap-3 transition-all active:scale-[0.98]"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
         >
-          <FileText className="w-4 h-4 text-purple-400 flex-shrink-0" />
-          <span className="text-[10px] font-display font-bold text-foreground">TERMS</span>
+          <FileText className="w-4 h-4 flex-shrink-0 text-purple-400" />
+          <span className="text-xs font-display font-bold text-white">Terms &amp; Conditions</span>
+          <ChevronRight className="w-3.5 h-3.5 text-white/30 ml-auto flex-shrink-0" />
         </button>
       </div>
 
-      <p className="text-[9px] text-center text-muted-foreground/40 font-display tracking-[0.2em] uppercase pb-2">
-        Made for Solana Mobile &amp; Web
-      </p>
     </div>
   );
 }

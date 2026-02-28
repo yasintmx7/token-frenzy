@@ -14,6 +14,14 @@ import { SOLANA_RPC_URL, GAME_PASS_COLLECTION_ADDRESS } from '@/lib/solanaConfig
 
 type Screen = 'menu' | 'playing' | 'gameOver';
 
+// Declare the Android JS bridge (injected by MainActivity)
+declare global {
+  interface Window {
+    Android?: { setState: (state: string) => void };
+    handleAndroidBack?: () => void;
+  }
+}
+
 interface GameStats {
   score: number;
   tokensSliced: number;
@@ -95,18 +103,21 @@ const Game = () => {
     setMode(selectedMode);
     setGameKey(prev => prev + 1);
     setScreen('playing');
+    window.Android?.setState('playing');
   }, []);
 
   const handleGameOver = useCallback((gameStats: GameStats) => {
     setStats(gameStats);
     updateProgressAfterGame(gameStats.score, gameStats.tokensSliced, gameStats.bestCombo);
     setScreen('gameOver');
+    window.Android?.setState('gameover');
   }, []);
 
   const handleRestart = useCallback(() => {
     if (isLocked) return;
     setGameKey(prev => prev + 1);
     setScreen('playing');
+    window.Android?.setState('playing');
   }, [isLocked]);
 
   const [initialMenuTab, setInitialMenuTab] = useState<'play' | 'rank' | 'skins'>('play');
@@ -114,6 +125,7 @@ const Game = () => {
   const handleMenu = useCallback((tab: 'play' | 'rank' | 'skins' = 'play') => {
     setInitialMenuTab(tab);
     setScreen('menu');
+    window.Android?.setState('home');
   }, []);
 
   // Requirement: Do not allow gameplay while wallet is disconnected
@@ -132,6 +144,22 @@ const Game = () => {
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Register global back handler for Android native back button
+  useEffect(() => {
+    window.handleAndroidBack = () => {
+      if (screen === 'playing') {
+        // During gameplay → go back to menu (acts as pause/exit)
+        handleMenu('play');
+      } else if (screen === 'gameOver') {
+        handleMenu('play');
+      } else if (screen === 'menu') {
+        // Delegated to MainMenu's own handler (subtab navigation)
+        // MainMenu registers its own window.handleAndroidBack when on subtabs
+      }
+    };
+    return () => { window.handleAndroidBack = undefined; };
+  }, [screen, handleMenu]);
 
   return (
     <div className="w-full h-screen bg-black flex items-center justify-center overflow-hidden">
