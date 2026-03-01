@@ -6,9 +6,9 @@ import { type GameMode } from '@/lib/gameEngine';
 import { loadProgress, setSelectedBoard } from '@/lib/storage';
 import { BOARD_THEMES } from '@/lib/boardThemes';
 import BoardSkinSelector from './BoardSkinSelector';
-import WalletButton from './WalletButton';
 import { Leaderboard } from './Leaderboard';
 import { LegalModal } from './LegalModals';
+import WalletButton from './WalletButton';
 import heroBg from '@/assets/hero-bg.png';
 
 interface MainMenuProps {
@@ -62,11 +62,7 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
   };
 
   const handlePlayClick = () => {
-    if (connected) {
-      onStart(selectedMode);
-    } else {
-      setVisible(true);
-    }
+    onStart(selectedMode);
   };
 
   const [isLandscape, setIsLandscape] = useState(false);
@@ -143,14 +139,14 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
               {/* Play button */}
               <button
                 onClick={handlePlayClick}
-                className={`group relative animate-fade-in btn-premium ${!connected ? 'opacity-85' : ''} ${isLandscape ? 'mt-2' : 'mt-1'}`}
+                className={`group relative animate-fade-in btn-premium ${isLandscape ? 'mt-2' : 'mt-1'}`}
               >
                 <div className="absolute -inset-1.5 rounded-full opacity-50 blur-lg group-hover:opacity-70 transition-opacity"
                   style={{ background: 'linear-gradient(135deg, hsl(var(--neon-purple)), hsl(var(--neon-pink)), hsl(var(--neon-cyan)))' }} />
                 <div className="relative flex items-center gap-2 px-8 py-3 rounded-full glass-panel-strong">
                   <Gamepad2 className="w-5 h-5 text-foreground/80" />
                   <span className="text-sm font-display font-bold tracking-[0.2em] text-foreground">
-                    {connected ? 'PLAY' : 'CONNECT WALLET'}
+                    PLAY
                   </span>
                 </div>
               </button>
@@ -360,22 +356,7 @@ function ProfileDashboard({ progress, onOpenLegal, isLandscape }: {
           </div>
         </div>
 
-        {/* ── Wallet nudge (guest only) ── */}
-        {!connected && (
-          <div
-            className="rounded-xl p-3 flex items-center gap-3"
-            style={{
-              background: 'linear-gradient(135deg,rgba(147,51,234,0.15),rgba(236,72,153,0.15))',
-              border: '1px solid rgba(147,51,234,0.3)',
-            }}
-          >
-            <ShieldCheck className="w-5 h-5 flex-shrink-0" style={{ color: '#c084fc' }} />
-            <div>
-              <p className="text-xs font-display font-black text-white">CONNECT WALLET</p>
-              <p className="text-[9px] text-white/50 mt-0.5">Link your Solana wallet to save scores</p>
-            </div>
-          </div>
-        )}
+
 
         {/* ── Legal — full-width stacked, always readable ── */}
         <div className="flex flex-col gap-2 mt-auto">

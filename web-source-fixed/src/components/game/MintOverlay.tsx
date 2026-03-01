@@ -1,75 +1,47 @@
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
-import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
-import { walletAdapterIdentity } from '@metaplex-foundation/umi-signer-wallet-adapters';
-import { create, mplCore, fetchCollection } from '@metaplex-foundation/mpl-core';
-import { generateSigner, transactionBuilder, publicKey as umiPublicKey, sol } from '@metaplex-foundation/umi';
-import { transferSol } from '@metaplex-foundation/mpl-toolbox';
-import { useState } from 'react';
-import { Wallet } from 'lucide-react';
-import {
-    SOLANA_RPC_URL,
-    ITEM_METADATA_URI,
-    GAME_PASS_COLLECTION_ADDRESS,
-    TREASURY_WALLET
-} from '@/lib/solanaConfig';
+import { useState, useRef } from 'react';
+import { Wallet, Loader2 } from 'lucide-react';
+import { useNativeWallet } from '@/components/NativeWalletContext';
 
 interface MintOverlayProps {
     onSuccess: () => void;
 }
 
 export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
-    const { publicKey, wallet, connected, connecting } = useWallet();
-    const { setVisible } = useWalletModal();
+    const { connected, connecting, connect, mintGamePass } = useNativeWallet();
     const [status, setStatus] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const isMintingRef = useRef(false); // Prevent double-taps at the JS layer too
 
     const handleMint = async () => {
-        if (!publicKey || !wallet) return;
+        // Prevent duplicate requests
+        if (isMintingRef.current || isLoading || !connected) return;
+        isMintingRef.current = true;
 
         try {
             setIsLoading(true);
-            setStatus("Preparing transaction...");
+            setStatus("Opening wallet...");
 
-            const umi = createUmi(SOLANA_RPC_URL)
-                .use(mplCore())
-                .use(walletAdapterIdentity(wallet.adapter));
+            // Native call: pays 0.0025 SOL + mints NFT via Helius
+            const result = await mintGamePass();
+            console.log('[MintOverlay] Mint result:', result);
 
-            const assetSigner = generateSigner(umi);
-            const collectionAsset = await fetchCollection(umi, umiPublicKey(GAME_PASS_COLLECTION_ADDRESS));
-
-            await transactionBuilder()
-                .add(
-                    transferSol(umi, {
-                        destination: umiPublicKey(TREASURY_WALLET),
-                        amount: sol(0.0025),
-                    })
-                )
-                .add(
-                    create(umi, {
-                        asset: assetSigner,
-                        name: "Token Frenzy Game Pass",
-                        uri: ITEM_METADATA_URI,
-                        collection: collectionAsset,
-                        plugins: [
-                            {
-                                type: "PermanentFreezeDelegate",
-                                frozen: true,
-                                authority: { type: 'None' },
-                            },
-                        ],
-                    })
-                )
-                .sendAndConfirm(umi);
-
-            setStatus("Success! Unlocking game...");
-            setTimeout(onSuccess, 1500);
-
+            setStatus("Game Pass minted! Unlocking game...");
+            // Give user time to read the success message
+            setTimeout(() => {
+                onSuccess();
+            }, 1500);
         } catch (err: any) {
-            console.error(err);
-            setStatus(err.message?.includes("User rejected") ? "Mint cancelled" : "Error: " + (err.message || "Mint failed"));
-        } finally {
+            console.error('[MintOverlay] Mint error:', err);
+            const msg = err?.message || 'Unknown error';
+            if (msg.includes('rejected') || msg.includes('declined') || msg.includes('cancelled') || msg.includes('not signed')) {
+                setStatus("Mint cancelled");
+            } else if (msg.includes('Already processing')) {
+                setStatus("Already processing...");
+            } else {
+                setStatus("Error: " + msg);
+            }
             setIsLoading(false);
+            isMintingRef.current = false;
         }
     };
 
@@ -115,13 +87,13 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                     TRIAL ENDED
                 </h2>
                 <p style={{ color: '#9ca3af', marginBottom: '2rem', lineHeight: '1.5', fontSize: '0.9rem' }}>
-                    You've enjoyed your free trial! Mint a permanent **Game Pass** to continue playing and save your progress.
+                    Mint a permanent <strong>Game Pass NFT</strong> to continue playing and save your progress.
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
                     {!connected ? (
                         <button
-                            onClick={() => setVisible(true)}
+                            onClick={connect}
                             disabled={connecting}
                             style={{
                                 width: '100%',
@@ -132,15 +104,20 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                                 borderRadius: '14px',
                                 fontWeight: '900',
                                 fontSize: '1rem',
-                                cursor: 'pointer',
+                                cursor: connecting ? 'default' : 'pointer',
                                 transition: 'all 0.2s',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                gap: '10px'
+                                gap: '10px',
+                                opacity: connecting ? 0.7 : 1,
                             }}
                         >
-                            <Wallet className="w-5 h-5" />
+                            {connecting ? (
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                                <Wallet className="w-5 h-5" />
+                            )}
                             {connecting ? 'CONNECTING...' : 'CONNECT WALLET'}
                         </button>
                     ) : (
@@ -150,7 +127,9 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                             style={{
                                 width: '100%',
                                 padding: '16px',
-                                background: 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)',
+                                background: isLoading
+                                    ? 'linear-gradient(135deg, #6b5798 0%, #a03ab8 100%)'
+                                    : 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)',
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '14px',
@@ -158,11 +137,18 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                                 fontSize: '1.1rem',
                                 cursor: isLoading ? 'default' : 'pointer',
                                 transition: 'all 0.2s',
-                                boxShadow: '0 10px 15px -3px rgba(139, 92, 246, 0.3)',
-                                opacity: isLoading ? 0.7 : 1
+                                boxShadow: isLoading ? 'none' : '0 10px 15px -3px rgba(139, 92, 246, 0.3)',
+                                opacity: isLoading ? 0.7 : 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '10px',
                             }}
                         >
-                            {isLoading ? "PROCESSING..." : "MINT PASS (0.0025 SOL)"}
+                            {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
+                            {isLoading
+                                ? (status.includes('Opening') ? 'OPENING WALLET...' : 'WAITING FOR CONFIRMATION...')
+                                : 'MINT PASS (0.0025 SOL)'}
                         </button>
                     )}
                 </div>
@@ -170,7 +156,11 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                 {status && (
                     <p style={{
                         marginTop: '1.5rem',
-                        color: status.includes('Error') || status.includes('cancelled') ? '#f87171' : '#a78bfa',
+                        color: status.includes('Error') || status.includes('cancelled') || status.includes('failed')
+                            ? '#f87171'
+                            : status.includes('minted') || status.includes('Unlocking')
+                                ? '#34d399'
+                                : '#a78bfa',
                         fontSize: '0.9rem',
                         fontWeight: '500'
                     }}>

@@ -1,15 +1,11 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState } from 'react';
 import { RotateCcw, Home, Zap, Scissors, Star, Trophy } from 'lucide-react';
 import { type GameMode } from '@/lib/gameEngine';
 import { loadProgress } from '@/lib/storage';
 import { getThemeById } from '@/lib/boardThemes';
 import { supabase } from '@/lib/supabase';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
-import { walletAdapterIdentity } from '@metaplex-foundation/umi-signer-wallet-adapters';
-import { transferSol } from '@metaplex-foundation/mpl-toolbox';
-import { sol, transactionBuilder, publicKey as umiPublicKey } from '@metaplex-foundation/umi';
-import { SOLANA_RPC_URL, TREASURY_WALLET, SCORE_SUBMIT_PRICE_SOL } from '@/lib/solanaConfig';
+import { useNativeWallet } from '@/components/NativeWalletContext';
+import { TREASURY_WALLET, SCORE_SUBMIT_PRICE_SOL } from '@/lib/solanaConfig';
 
 interface GameOverProps {
   stats: {
@@ -32,41 +28,25 @@ function modeLabel(mode: GameMode): string {
 const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
   const progress = loadProgress();
   const boardTheme = getThemeById(progress.selectedBoard);
-  const { publicKey, wallet, connected } = useWallet();
+  const { walletAddress, connected, connect, sendSol } = useNativeWallet();
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
   const handleScoreSubmit = async () => {
-    if (!publicKey || !wallet || !connected || isSubmitted) return;
+    if (!walletAddress || !connected || isSubmitted) return;
 
     try {
       setIsLoading(true);
       setStatus("Awaiting payment approval...");
 
-      const umi = createUmi(SOLANA_RPC_URL)
-        .use(walletAdapterIdentity(wallet.adapter));
-
-      await transactionBuilder()
-        .add(
-          transferSol(umi, {
-            destination: umiPublicKey(TREASURY_WALLET),
-            amount: sol(SCORE_SUBMIT_PRICE_SOL),
-          })
-        )
-        .sendAndConfirm(umi);
+      // Send SOL via native bridge
+      await sendSol(TREASURY_WALLET, SCORE_SUBMIT_PRICE_SOL);
 
       setStatus("Saving score...");
-      // Omit created_at to let Supabase default now() handle it
-      // Added .select() to ensure the operation completes and returns the result for verification
       const { error: dbError } = await supabase
         .from('leaderboard')
-        .insert([
-          {
-            wallet: publicKey.toString(),
-            score: Number(stats.score)
-          }
-        ])
+        .insert([{ wallet: walletAddress, score: Number(stats.score) }])
         .select();
 
       if (!dbError) {
@@ -78,7 +58,6 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
       }
     } catch (err: any) {
       console.error('Failed to submit score:', err);
-      // Report detailed error for debugging
       setStatus(err.message?.includes("User rejected") ? "Payment cancelled" : (err.message || "Transaction failed"));
     } finally {
       setIsLoading(false);
@@ -88,11 +67,9 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-start py-12 px-6 relative overflow-y-auto overflow-x-hidden custom-scrollbar"
       style={{ backgroundColor: boardTheme.background }}>
-      {/* Full-screen board skin background */}
-      <img src={boardTheme.backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover fixed" />
-      <div className="absolute inset-0 bg-background/50 fixed" />
+      <img src={boardTheme.backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover" />
+      <div className="absolute inset-0 bg-background/50" />
 
-      {/* Card container */}
       <div
         className="relative z-10 w-full max-w-sm rounded-[24px] p-8 animate-scale-in"
         style={{
@@ -103,10 +80,8 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
         }}
       >
         <div className="flex flex-col items-center gap-5">
-          {/* Star icon */}
           <Star className="w-10 h-10" style={{ color: 'hsl(var(--neon-amber))', filter: 'drop-shadow(0 0 10px hsla(38,100%,60%,0.6))' }} />
 
-          {/* Title */}
           <div className="text-center">
             <h1
               className="text-4xl font-display font-black tracking-wider uppercase"
@@ -122,7 +97,6 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
             <p className="text-sm text-muted-foreground mt-1">{modeLabel(stats.mode)}</p>
           </div>
 
-          {/* Score */}
           <div className="flex items-baseline gap-2">
             <span
               className="text-6xl font-display font-black leading-none"
@@ -137,7 +111,6 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
             <span className="text-xl font-display text-muted-foreground font-bold">pts</span>
           </div>
 
-          {/* Stats row */}
           <div className="flex gap-3 w-full">
             <StatCard icon={Zap} label="Best Combo" value={`x${stats.bestCombo}`} colorVar="--neon-amber" />
             <StatCard icon={Scissors} label="Sliced" value={String(stats.tokensSliced)} colorVar="--neon-cyan" />
@@ -145,9 +118,9 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
 
           {/* Score Submission */}
           <div className="flex flex-col gap-3 w-full mt-2">
-            {!isSubmitted && connected && publicKey && (
+            {!isSubmitted && (
               <button
-                onClick={handleScoreSubmit}
+                onClick={connected ? handleScoreSubmit : connect}
                 disabled={isLoading}
                 className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-white transition-all duration-200 hover:scale-[1.02] active:scale-95 disabled:opacity-50"
                 style={{
@@ -156,7 +129,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
                 }}
               >
                 <Trophy className="w-4 h-4" />
-                <span>{isLoading ? 'SUBMITTING...' : `SUBMIT SCORE — ${SCORE_SUBMIT_PRICE_SOL} SOL`}</span>
+                <span>{isLoading ? 'SUBMITTING...' : (!connected ? 'CONNECT WALLET TO SUBMIT' : `SUBMIT SCORE — ${SCORE_SUBMIT_PRICE_SOL} SOL`)}</span>
               </button>
             )}
 
@@ -167,9 +140,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
             )}
           </div>
 
-          {/* Action buttons */}
           <div className="flex flex-col gap-3 w-full mt-2">
-            {/* Play Again */}
             <button
               onClick={onRestart}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-foreground transition-all duration-200 hover:scale-[1.02] active:scale-95"
@@ -182,7 +153,6 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
               Play Again
             </button>
 
-            {/* Back to Menu */}
             <button
               onClick={onMenu}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold text-muted-foreground transition-all duration-200 hover:text-foreground glass-panel hover:border-[hsla(280,100%,65%,0.3)]"
@@ -192,7 +162,6 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
             </button>
           </div>
 
-          {/* 📊 Global Hall of Fame Link */}
           <div className="w-full pt-2 flex flex-col gap-2 border-t border-white/5">
             <button
               onClick={onViewRank || onMenu}

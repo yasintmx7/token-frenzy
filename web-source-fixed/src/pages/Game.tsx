@@ -17,8 +17,24 @@ type Screen = 'menu' | 'playing' | 'gameOver';
 // Declare the Android JS bridge (injected by MainActivity)
 declare global {
   interface Window {
-    Android?: { setState: (state: string) => void };
+    Android?: {
+      setState: (state: string) => void;
+      connectWallet: () => void;
+      disconnectWallet: () => void;
+      getWalletAddress: () => string;
+      isWalletConnected: () => boolean;
+      sendSol: (to: string, amount: number) => void;
+      mintGamePass: () => void;
+    };
     handleAndroidBack?: () => void;
+    __onNativeWalletConnected?: (address: string) => void;
+    __onNativeWalletDisconnected?: () => void;
+    __onNativeWalletError?: (error: string) => void;
+    __nativeWalletAddress?: string;
+    __onNativeTxSuccess?: (signature: string) => void;
+    __onNativeTxError?: (error: string) => void;
+    __onNativeMintSuccess?: (result: string) => void;
+    __onNativeMintError?: (error: string) => void;
   }
 }
 
@@ -38,9 +54,10 @@ const Game = () => {
 
   // --- TRIAL & PASS LOGIC ---
   const wallet = useWallet();
-  const [hasPass, setHasPass] = useState<boolean | null>(null); // null means checking
+  const [hasPass, setHasPass] = useState<boolean | null>(null);
   const [trialTime, setTrialTime] = useState(15);
   const [isLocked, setIsLocked] = useState(false);
+  const [showMintOverlay, setShowMintOverlay] = useState(false);
 
   // Requirement: check ownership on key events (connect, change, mint success)
   const checkOwnership = useCallback(async () => {
@@ -60,9 +77,9 @@ const Game = () => {
 
       setHasPass(ownsPass);
 
-      // If pass is found, unlock forever
       if (ownsPass) {
         setIsLocked(false);
+        setShowMintOverlay(false);
       }
     } catch (err) {
       console.error("Pass check failed:", err);
@@ -84,6 +101,7 @@ const Game = () => {
           if (prev <= 1) {
             clearInterval(timer);
             setIsLocked(true);
+            setShowMintOverlay(true);
             return 0;
           }
           return prev - 1;
@@ -93,8 +111,9 @@ const Game = () => {
     }
   }, [screen, hasPass, trialTime]);
 
-  // Event 3: Check ownership once again after mint success
   const handleMintSuccess = useCallback(() => {
+    setShowMintOverlay(false);
+    setIsLocked(false);
     checkOwnership();
   }, [checkOwnership]);
 
@@ -114,7 +133,10 @@ const Game = () => {
   }, []);
 
   const handleRestart = useCallback(() => {
-    if (isLocked) return;
+    if (isLocked) {
+      setShowMintOverlay(true);
+      return;
+    }
     setGameKey(prev => prev + 1);
     setScreen('playing');
     window.Android?.setState('playing');
@@ -128,12 +150,6 @@ const Game = () => {
     window.Android?.setState('home');
   }, []);
 
-  // Requirement: Do not allow gameplay while wallet is disconnected
-  useEffect(() => {
-    if (screen === 'playing' && !wallet.connected) {
-      handleMenu('play');
-    }
-  }, [screen, wallet.connected, handleMenu]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -164,12 +180,12 @@ const Game = () => {
   return (
     <div className="w-full h-screen bg-black flex items-center justify-center overflow-hidden">
       <div
-        className={`relative shadow-2xl transition-all duration-500 overflow-hidden ${isVertical
-          ? 'h-full aspect-[9/16] max-h-screen'
+        className={`relative transition-all duration-500 ${isVertical
+          ? 'h-full aspect-[9/16] max-h-screen overflow-hidden'
           : 'w-full h-full'
           }`}
       >
-        {screen === 'menu' && <MainMenu onStart={handleStart} initialTab={initialMenuTab} hasPass={hasPass} onRequestMint={() => setIsLocked(true)} />}
+        {screen === 'menu' && <MainMenu onStart={handleStart} initialTab={initialMenuTab} hasPass={hasPass} onRequestMint={() => setShowMintOverlay(true)} />}
         {screen === 'gameOver' && stats && (
           <GameOver stats={stats} onRestart={handleRestart} onMenu={() => handleMenu('play')} onViewRank={() => handleMenu('rank')} />
         )}
@@ -187,8 +203,8 @@ const Game = () => {
           </>
         )}
 
-        {/* MINT OVERLAY */}
-        {isLocked && <MintOverlay onSuccess={handleMintSuccess} />}
+        {/* MINT OVERLAY — shown when trial ends or user requests it */}
+        {(isLocked || showMintOverlay) && <MintOverlay onSuccess={handleMintSuccess} />}
       </div>
     </div>
   );

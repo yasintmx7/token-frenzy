@@ -1,64 +1,44 @@
 /**
- * SolanaWrapper — Official Mobile Wallet Adapter for Web
+ * SolanaWrapper — Correct setup for an Android WebView app.
  *
- * Per the official Solana Mobile docs (https://docs.solanamobile.com/get-started/web/installation):
+ * In a WebView there are NO browser extensions, so we must NOT include
+ * PhantomWalletAdapter or SolflareWalletAdapter (browser-extension adapters).
+ * Those cause "download" prompts and "can't find wallet" errors.
  *
- * 1. Install:  npm install @solana-mobile/wallet-standard-mobile
- * 2. Call registerMwa() once at startup.
- *    This registers Mobile Wallet Adapter as a Wallet Standard wallet so that
- *    @solana/wallet-adapter-react picks it up automatically — no custom adapter class needed.
- * 3. The WalletProvider wallets=[...] array can stay empty; registered Standard wallets
- *    are discovered automatically by the adapter ecosystem.
+ * The ONLY adapter needed is SolanaMobileWalletAdapter (MWA).
+ * When the user taps "Mobile Wallet Adapter", Android shows a native bottom
+ * sheet with ALL installed MWA-compatible wallets (Phantom, Solflare, Seeker…).
+ * The user picks one → that wallet app opens → signs → returns to game.
  */
 
 import { useMemo } from 'react';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 
-// Official Solana Mobile Wallet Standard package (web apps)
-// https://docs.solanamobile.com/get-started/web/installation
-import {
-    createDefaultAuthorizationCache,
-    createDefaultChainSelector,
-    createDefaultWalletNotFoundHandler,
-    registerMwa,
-} from '@solana-mobile/wallet-standard-mobile';
-
-import { SOLANA_RPC_URL } from '@/lib/solanaConfig';
-import '@solana/wallet-adapter-react-ui/styles.css';
-
-// Register MWA once at module-load time (not inside a React component).
-// This call makes any installed Solana wallet app on the device available
-// as a selectable wallet in the standard wallet modal.
-registerMwa({
-    appIdentity: {
-        name: 'Token Frenzy',
-        uri: 'https://tokenfrenzy.app',
-        icon: 'favicon.ico',
-    },
-    authorizationCache: createDefaultAuthorizationCache(),
-    // Support both mainnet and devnet
-    chains: ['solana:mainnet', 'solana:devnet'],
-    chainSelector: createDefaultChainSelector(),
-    onWalletNotFound: createDefaultWalletNotFoundHandler(),
-});
-
-import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
-import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import {
     SolanaMobileWalletAdapter,
     createDefaultAddressSelector,
     createDefaultAuthorizationResultCache,
-    createDefaultWalletNotFoundHandler as smwaCreateDefaultWalletNotFoundHandler
+    createDefaultWalletNotFoundHandler,
 } from '@solana-mobile/wallet-adapter-mobile';
+
+import { SOLANA_RPC_URL } from '@/lib/solanaConfig';
+import '@solana/wallet-adapter-react-ui/styles.css';
 
 export const SolanaWrapper = ({ children }: { children: React.ReactNode }) => {
     const endpoint = useMemo(() => SOLANA_RPC_URL, []);
 
-    // Pass an array of popular wallets including Solana Mobile Wallet Adapter
-    // MWA is auto-registered via registerMwa, but using SMWA class forces compatibility
-    // with certain older dApp browsers.
     const wallets = useMemo(() => [
+        /**
+         * SolanaMobileWalletAdapter — the ONLY adapter needed in a WebView.
+         *
+         * It uses the Solana Mobile Wallet Adapter protocol (MWA) to discover
+         * and communicate with ANY installed wallet app on the Android device
+         * (Phantom, Solflare, Backpack, Solana Seeker, etc.) via local intents.
+         *
+         * The wallet picker bottom sheet is shown natively by the wallet app
+         * itself — not by the web app.
+         */
         new SolanaMobileWalletAdapter({
             addressSelector: createDefaultAddressSelector(),
             appIdentity: {
@@ -68,10 +48,8 @@ export const SolanaWrapper = ({ children }: { children: React.ReactNode }) => {
             },
             authorizationResultCache: createDefaultAuthorizationResultCache(),
             cluster: 'mainnet-beta',
-            onWalletNotFound: smwaCreateDefaultWalletNotFoundHandler(),
+            onWalletNotFound: createDefaultWalletNotFoundHandler(),
         }),
-        new PhantomWalletAdapter(),
-        new SolflareWalletAdapter(),
     ], []);
 
     return (

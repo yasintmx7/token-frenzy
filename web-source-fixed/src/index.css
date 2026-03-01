@@ -56,21 +56,34 @@
     @apply border-border;
   }
 
-  /* Ensure html/body exactly fill the WebView visible area on Android */
-  html, body, #root {
+  /* html and body must NOT have overflow:hidden — it clips position:fixed portals
+     (like the Solana wallet modal) in Android WebView's Blink engine.
+     Scroll-locking is handled by #root and the game containers instead. */
+  html {
     width: 100%;
     height: 100%;
-    height: 100dvh; /* Dynamic viewport height — correct for mobile WebView */
-    overflow: hidden;
+    height: 100dvh;
     margin: 0;
     padding: 0;
   }
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+  }
+
+  #root {
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
     overflow: hidden;
   }
 }
+
 
 /* Fix: Tailwind's h-screen = 100vh which is too tall in Android WebView.
    Override to use 100dvh (dynamic viewport) = actual visible height. */
@@ -78,9 +91,11 @@
   .h-screen {
     height: 100dvh !important;
   }
+
   .min-h-screen {
     min-height: 100dvh !important;
   }
+
   .max-h-screen {
     max-height: 100dvh !important;
   }
@@ -161,5 +176,69 @@
     100% {
       transform: scale(1);
     }
+  }
+
+  /* ─── Wallet Adapter Modal — Force to absolute top layer ─────────────────
+   *
+   * Problem: The game container uses overflow:hidden + backdrop-filter which
+   * creates a new stacking context, trapping the portal inside it.
+   *
+   * Fix: Override every wallet-adapter layer to use the maximum z-index and
+   * ensure the overlay covers the entire viewport regardless of stacking context.
+   * ─────────────────────────────────────────────────────────────────────── */
+  .wallet-adapter-modal-wrapper,
+  .wallet-adapter-modal-overlay,
+  .wallet-adapter-modal {
+    z-index: 2147483647 !important;
+    /* max int32 — above everything */
+    position: fixed !important;
+  }
+
+  .wallet-adapter-modal-overlay {
+    inset: 0 !important;
+    background: rgba(0, 0, 0, 0.65) !important;
+    backdrop-filter: blur(6px) !important;
+    -webkit-backdrop-filter: blur(6px) !important;
+  }
+
+  .wallet-adapter-modal-wrapper {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    inset: 0 !important;
+    pointer-events: auto !important;
+  }
+
+  .wallet-adapter-modal-container {
+    z-index: 2147483647 !important;
+    position: relative !important;
+    background: #1a1a2e !important;
+    border: 1px solid rgba(139, 92, 246, 0.3) !important;
+    border-radius: 24px !important;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(139, 92, 246, 0.15) !important;
+    max-width: 380px !important;
+    width: 90vw !important;
+  }
+
+  /* Style the wallet list items */
+  .wallet-adapter-modal-list li {
+    border-radius: 12px !important;
+    transition: background 0.2s !important;
+  }
+
+  .wallet-adapter-modal-list li:hover {
+    background: rgba(139, 92, 246, 0.15) !important;
+  }
+
+  /* Title */
+  .wallet-adapter-modal-title {
+    color: white !important;
+    font-weight: 800 !important;
+    font-size: 1.1rem !important;
+  }
+
+  /* Wallet name text */
+  .wallet-adapter-button-start-icon+span {
+    color: white !important;
   }
 }
