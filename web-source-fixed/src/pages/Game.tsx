@@ -1,8 +1,4 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { createUmi } from '@metaplex-foundation/umi-bundle-defaults';
-import { mplCore, fetchAssetsByOwner } from '@metaplex-foundation/mpl-core';
-import { publicKey as umiPublicKey } from '@metaplex-foundation/umi';
 import MainMenu from '@/components/game/MainMenu';
 import GameCanvas from '@/components/game/GameCanvas';
 import GameOver from '@/components/game/GameOver';
@@ -11,6 +7,7 @@ import { TrialTimer } from '@/components/game/TrialTimer';
 import { type GameMode } from '@/lib/gameEngine';
 import { updateProgressAfterGame, loadProgress } from '@/lib/storage';
 import { SOLANA_RPC_URL, GAME_PASS_COLLECTION_ADDRESS } from '@/lib/solanaConfig';
+import { useNativeWallet } from '@/components/NativeWalletContext';
 
 type Screen = 'menu' | 'playing' | 'gameOver';
 
@@ -53,7 +50,7 @@ const Game = () => {
   const [isVertical, setIsVerticalState] = useState(loadProgress().isVertical);
 
   // --- TRIAL & PASS LOGIC ---
-  const wallet = useWallet();
+  const wallet = useNativeWallet();
   const [hasPass, setHasPass] = useState<boolean | null>(null);
   const [trialTime, setTrialTime] = useState(15);
   const [isLocked, setIsLocked] = useState(false);
@@ -61,19 +58,36 @@ const Game = () => {
 
   // Requirement: check ownership on key events (connect, change, mint success)
   const checkOwnership = useCallback(async () => {
-    if (!wallet.publicKey) {
+    if (!wallet.walletAddress) {
       setHasPass(false);
       return;
     }
 
     try {
-      const umi = createUmi(SOLANA_RPC_URL).use(mplCore());
-      const assets = await fetchAssetsByOwner(umi, umiPublicKey(wallet.publicKey));
+      const response = await fetch(SOLANA_RPC_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'check-ownership',
+          method: 'getAssetsByOwner',
+          params: {
+            ownerAddress: wallet.walletAddress,
+            page: 1,
+            limit: 1000
+          },
+        }),
+      });
 
-      const ownsPass = assets.some(asset =>
-        asset.updateAuthority.type === 'Collection' &&
-        asset.updateAuthority.address.toString() === GAME_PASS_COLLECTION_ADDRESS
-      );
+      const { result } = await response.json();
+
+      const ownsPass = result?.items?.some((asset: any) =>
+        asset.content?.metadata?.name === 'Token Frenzy Game Pass' ||
+        asset.content?.metadata?.symbol === 'TFGP' ||
+        (asset.grouping || []).some((group: any) => group.group_value === GAME_PASS_COLLECTION_ADDRESS)
+      ) ?? false;
 
       setHasPass(ownsPass);
 
@@ -86,12 +100,12 @@ const Game = () => {
       // Fallback to false if check fails to ensure trial logic works
       setHasPass(false);
     }
-  }, [wallet.publicKey]);
+  }, [wallet.walletAddress]);
 
   // Event 1 & 2: Check on mount, auto-connect, or manual wallet connect
   useEffect(() => {
     checkOwnership();
-  }, [wallet.connected, wallet.publicKey, checkOwnership]);
+  }, [wallet.connected, wallet.walletAddress, checkOwnership]);
 
   // Timer logic for trial
   useEffect(() => {
