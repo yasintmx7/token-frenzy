@@ -27,9 +27,15 @@ class SolanaWallet(private val activity: ComponentActivity) {
         private const val APP_NAME = "Token Frenzy"
         private const val APP_URI = "https://tokenfrenzy.app"
         private const val APP_ICON = "favicon.ico"
+        
+        private const val PREFS_NAME = "TokenFrenzyPrefs"
+        private const val KEY_AUTH_TOKEN = "auth_token"
+        private const val KEY_WALLET_ADDRESS = "wallet_address"
     }
 
     private var walletPublicKey: SolanaPublicKey? = null
+    private var authToken: String? = null
+    
     val isConnected: Boolean get() = walletPublicKey != null
     val walletAddress: String? get() = walletPublicKey?.let { Base58.encode(it.bytes) }
 
@@ -41,6 +47,16 @@ class SolanaWallet(private val activity: ComponentActivity) {
             identityName = APP_NAME
         )
     )
+
+    init {
+        val prefs = activity.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        val savedAddr = prefs.getString(KEY_WALLET_ADDRESS, null)
+        authToken = prefs.getString(KEY_AUTH_TOKEN, null)
+        if (savedAddr != null && authToken != null) {
+            walletPublicKey = SolanaPublicKey(Base58.decode(savedAddr))
+            Log.d(TAG, "Restored wallet address: $savedAddr")
+        }
+    }
 
     fun connect(
         onSuccess: (walletAddress: String) -> Unit,
@@ -54,6 +70,14 @@ class SolanaWallet(private val activity: ComponentActivity) {
                         val account = result.authResult.accounts.first()
                         walletPublicKey = SolanaPublicKey(account.publicKey)
                         val address = Base58.encode(account.publicKey)
+                        authToken = result.authResult.authToken
+                        
+                        activity.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit().apply {
+                            putString(KEY_AUTH_TOKEN, authToken)
+                            putString(KEY_WALLET_ADDRESS, address)
+                            apply()
+                        }
+                        
                         Log.d(TAG, "Connected: $address")
                         withContext(Dispatchers.Main) { onSuccess(address) }
                     }
@@ -77,6 +101,8 @@ class SolanaWallet(private val activity: ComponentActivity) {
 
     fun disconnect() {
         walletPublicKey = null
+        authToken = null
+        activity.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     fun sendSol(
@@ -122,13 +148,44 @@ class SolanaWallet(private val activity: ComponentActivity) {
 
                 Log.d(TAG, "sendSol: opening wallet...")
                 val result = walletAdapter.transact(sender) {
-                    authorize(
-                        identityUri = Uri.parse(APP_URI),
-                        iconUri = Uri.parse(APP_ICON),
-                        identityName = APP_NAME,
-                        chain = "solana:mainnet"
-                    )
+                    val currentToken = authToken
+                    if (currentToken != null) {
+                        try {
+                            val authResult = reauthorize(
+                                identityUri = Uri.parse(APP_URI),
+                                iconUri = Uri.parse(APP_ICON),
+                                identityName = APP_NAME,
+                                authToken = currentToken
+                            )
+                            authToken = authResult.authToken
+                        } catch (e: Exception) {
+                            Log.d(TAG, "reauthorize failed, falling back to authorize", e)
+                            val authResult = authorize(
+                                identityUri = Uri.parse(APP_URI),
+                                iconUri = Uri.parse(APP_ICON),
+                                identityName = APP_NAME,
+                                chain = "solana:mainnet"
+                            )
+                            authToken = authResult.authToken
+                        }
+                    } else {
+                        val authResult = authorize(
+                            identityUri = Uri.parse(APP_URI),
+                            iconUri = Uri.parse(APP_ICON),
+                            identityName = APP_NAME,
+                            chain = "solana:mainnet"
+                        )
+                        authToken = authResult.authToken
+                    }
+
                     signAndSendTransactions(arrayOf(transferTx.serialize()))
+                }
+                
+                // save updated token
+                authToken?.let {
+                    activity.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
+                        .putString(KEY_AUTH_TOKEN, it)
+                        .apply()
                 }
 
                 when (result) {
@@ -229,13 +286,43 @@ class SolanaWallet(private val activity: ComponentActivity) {
                 )
 
                 val txResult = walletAdapter.transact(sender) {
-                    authorize(
-                        identityUri = Uri.parse(APP_URI),
-                        iconUri = Uri.parse(APP_ICON),
-                        identityName = APP_NAME,
-                        chain = "solana:mainnet"
-                    )
+                    val currentToken = authToken
+                    if (currentToken != null) {
+                        try {
+                            val authResult = reauthorize(
+                                identityUri = Uri.parse(APP_URI),
+                                iconUri = Uri.parse(APP_ICON),
+                                identityName = APP_NAME,
+                                authToken = currentToken
+                            )
+                            authToken = authResult.authToken
+                        } catch (e: Exception) {
+                            Log.d(TAG, "reauthorize failed, falling back to authorize", e)
+                            val authResult = authorize(
+                                identityUri = Uri.parse(APP_URI),
+                                iconUri = Uri.parse(APP_ICON),
+                                identityName = APP_NAME,
+                                chain = "solana:mainnet"
+                            )
+                            authToken = authResult.authToken
+                        }
+                    } else {
+                        val authResult = authorize(
+                            identityUri = Uri.parse(APP_URI),
+                            iconUri = Uri.parse(APP_ICON),
+                            identityName = APP_NAME,
+                            chain = "solana:mainnet"
+                        )
+                        authToken = authResult.authToken
+                    }
                     signAndSendTransactions(arrayOf(transferTx.serialize()))
+                }
+
+                // save updated token
+                authToken?.let {
+                    activity.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE).edit()
+                        .putString(KEY_AUTH_TOKEN, it)
+                        .apply()
                 }
 
                 when (txResult) {
