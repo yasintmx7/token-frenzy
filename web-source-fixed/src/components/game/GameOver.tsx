@@ -44,10 +44,42 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
       await sendSol(TREASURY_WALLET, SCORE_SUBMIT_PRICE_SOL);
 
       setStatus("Saving score...");
+
+      // 1. Fetch all existing entries for this wallet
+      const { data: existingEntries, error: fetchError } = await supabase
+        .from('leaderboard')
+        .select('score, id')
+        .eq('wallet', walletAddress);
+
+      if (fetchError) {
+        console.error('Error checking existing scores:', fetchError);
+      }
+
+      let maxScore = Number(stats.score);
+      let alreadyExists = false;
+
+      if (existingEntries && existingEntries.length > 0) {
+        alreadyExists = true;
+        // Find the absolute best score between the current game and all DB records
+        const currentBestDB = Math.max(...existingEntries.map(e => e.score));
+        maxScore = Math.max(maxScore, currentBestDB);
+
+        // 2. Delete ALL existing entries to clean up any duplicates
+        const { error: deleteError } = await supabase
+          .from('leaderboard')
+          .delete()
+          .eq('wallet', walletAddress);
+
+        if (deleteError) {
+          console.error('Error cleaning up leaderboard duplicates:', deleteError);
+          // If delete fails, we'll try to insert anyway, though it might still be messy
+        }
+      }
+
+      // 3. Insert the single consolidated "best" score entry
       const { error: dbError } = await supabase
         .from('leaderboard')
-        .insert([{ wallet: walletAddress, score: Number(stats.score) }])
-        .select();
+        .insert([{ wallet: walletAddress, score: maxScore }]);
 
       if (!dbError) {
         setIsSubmitted(true);
@@ -65,13 +97,13 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-start py-12 px-6 relative overflow-y-auto overflow-x-hidden custom-scrollbar"
+    <div className="fixed inset-0 flex flex-col items-center justify-center p-4 sm:p-6"
       style={{ backgroundColor: boardTheme.background }}>
       <img src={boardTheme.backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0 bg-background/50" />
 
       <div
-        className="relative z-10 w-full max-w-sm rounded-[24px] p-8 animate-scale-in"
+        className="relative z-10 w-full max-w-[320px] max-h-[90vh] flex flex-col overflow-hidden rounded-[24px] animate-scale-in shadow-2xl"
         style={{
           background: 'linear-gradient(180deg, #140b2e 0%, #0b071a 100%)',
           backdropFilter: 'blur(10px)',
@@ -79,12 +111,12 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
           boxShadow: '0 0 40px rgba(150, 0, 255, 0.25), 0 20px 60px rgba(0, 0, 0, 0.6)',
         }}
       >
-        <div className="flex flex-col items-center gap-5">
-          <Star className="w-10 h-10" style={{ color: 'hsl(var(--neon-amber))', filter: 'drop-shadow(0 0 10px hsla(38,100%,60%,0.6))' }} />
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col items-center gap-4">
+          <Star className="w-8 h-8 shrink-0" style={{ color: 'hsl(var(--neon-amber))', filter: 'drop-shadow(0 0 10px hsla(38,100%,60%,0.6))' }} />
 
-          <div className="text-center">
+          <div className="text-center shrink-0">
             <h1
-              className="text-4xl font-display font-black tracking-wider uppercase"
+              className="text-3xl font-display font-black tracking-wider uppercase"
               style={{
                 background: 'linear-gradient(180deg, hsl(var(--neon-cyan)), hsl(var(--neon-purple)))',
                 WebkitBackgroundClip: 'text',
@@ -99,7 +131,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
 
           <div className="flex items-baseline gap-2">
             <span
-              className="text-6xl font-display font-black leading-none"
+              className="text-5xl font-display font-black leading-none"
               style={{
                 background: 'var(--gradient-score)',
                 WebkitBackgroundClip: 'text',
@@ -111,13 +143,13 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
             <span className="text-xl font-display text-muted-foreground font-bold">pts</span>
           </div>
 
-          <div className="flex gap-3 w-full">
+          <div className="flex gap-2 w-full shrink-0">
             <StatCard icon={Zap} label="Best Combo" value={`x${stats.bestCombo}`} colorVar="--neon-amber" />
             <StatCard icon={Scissors} label="Sliced" value={String(stats.tokensSliced)} colorVar="--neon-cyan" />
           </div>
 
           {/* Score Submission */}
-          <div className="flex flex-col gap-3 w-full mt-2">
+          <div className="flex flex-col gap-2 w-full mt-1 shrink-0">
             {!isSubmitted && (
               <button
                 onClick={connected ? handleScoreSubmit : connect}
@@ -129,7 +161,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
                 }}
               >
                 <Trophy className="w-4 h-4" />
-                <span>{isLoading ? 'SUBMITTING...' : (!connected ? 'CONNECT WALLET TO SUBMIT' : `SUBMIT SCORE — ${SCORE_SUBMIT_PRICE_SOL} SOL`)}</span>
+                <span>{isLoading ? 'SUBMITTING...' : (!connected ? 'CONNECT WALLET TO SUBMIT' : 'SUBMIT SCORE')}</span>
               </button>
             )}
 
@@ -140,10 +172,10 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
             )}
           </div>
 
-          <div className="flex flex-col gap-3 w-full mt-2">
+          <div className="flex flex-col gap-2 w-full mt-1 shrink-0">
             <button
               onClick={onRestart}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-foreground transition-all duration-200 hover:scale-[1.02] active:scale-95"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-foreground transition-all duration-200 hover:scale-[1.02] active:scale-95"
               style={{
                 background: 'linear-gradient(135deg, hsl(var(--neon-pink)), hsl(330,100%,55%))',
                 boxShadow: '0 0 25px hsla(330,100%,65%,0.4)',
@@ -155,14 +187,14 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
 
             <button
               onClick={onMenu}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-semibold text-muted-foreground transition-all duration-200 hover:text-foreground glass-panel hover:border-[hsla(280,100%,65%,0.3)]"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-muted-foreground transition-all duration-200 hover:text-foreground glass-panel hover:border-[hsla(280,100%,65%,0.3)]"
             >
               <Home className="w-4 h-4" />
               Back to Menu
             </button>
           </div>
 
-          <div className="w-full pt-2 flex flex-col gap-2 border-t border-white/5">
+          <div className="w-full pt-2 flex flex-col gap-2 border-t border-white/5 shrink-0">
             <button
               onClick={onViewRank || onMenu}
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-bold tracking-[0.2em] text-cyan-400/80 uppercase transition-all duration-200 hover:text-cyan-300"
@@ -185,7 +217,7 @@ function StatCard({ icon: Icon, label, value, colorVar }: {
 }) {
   return (
     <div
-      className="flex-1 rounded-xl px-4 py-3 text-center"
+      className="flex-1 rounded-xl px-2 py-2 text-center"
       style={{
         background: `hsla(${colorVar === '--neon-amber' ? '38,100%,60%' : '185,100%,60%'},0.08)`,
         border: `1px solid hsla(${colorVar === '--neon-amber' ? '38,100%,60%' : '185,100%,60%'},0.15)`,
@@ -193,9 +225,9 @@ function StatCard({ icon: Icon, label, value, colorVar }: {
     >
       <div className="flex items-center justify-center gap-1.5 mb-1">
         <Icon className="w-3.5 h-3.5" style={{ color: `hsl(var(${colorVar}))` }} />
-        <span className="text-xs font-medium" style={{ color: `hsl(var(${colorVar}))` }}>{label}</span>
+        <span className="text-[10px] font-medium" style={{ color: `hsl(var(${colorVar}))` }}>{label}</span>
       </div>
-      <div className="text-2xl font-display font-black text-foreground">{value}</div>
+      <div className="text-xl font-display font-black text-foreground">{value}</div>
     </div>
   );
 }

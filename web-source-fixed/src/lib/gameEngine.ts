@@ -16,6 +16,7 @@ export interface FlyingToken {
   sliced: boolean;
   isBomb: boolean;
   type: 'small' | 'medium' | 'large';
+  isGolden?: boolean;
 }
 
 export interface SlicedHalf {
@@ -66,7 +67,13 @@ export type SoundEvent =
   | { type: 'slice' }
   | { type: 'combo'; combo: number }
   | { type: 'bomb' }
-  | { type: 'gameOver' };
+  | { type: 'gameOver' }
+  | { type: 'zenCollapse' };
+
+// --- SINGULARITY CONSTANTS ---
+export const SINGULARITY_RADIUS = 280; // Pull range
+export const SINGULARITY_PULL = 800;   // Force
+export const SINGULARITY_MAX_CHARGE = 100;
 
 export interface GameState {
   tokens: FlyingToken[];
@@ -89,6 +96,8 @@ export interface GameState {
   elapsed: number;
   timeLeft?: number; // Optional countdown timer for Zen mode
   soundQueue: SoundEvent[];
+  isLagging?: boolean;
+  singularity: { x: number, y: number, active: boolean, charge: number, radius: number };
 }
 
 interface ModeConfig {
@@ -103,12 +112,12 @@ interface ModeConfig {
 const MODE_CONFIGS: Record<GameMode, ModeConfig> = {
   classic: { lives: 3, bombRate: 0.10, spawnInterval: 1.4, speedMult: 0.45, batchMin: 1, batchMax: 3 },
   frustration: { lives: 3, bombRate: 0.15, spawnInterval: 0.9, speedMult: 0.60, batchMin: 2, batchMax: 4 },
-  zen: { lives: 999, bombRate: 0, spawnInterval: 1.6, speedMult: 0.32, batchMin: 2, batchMax: 3 },
+  zen: { lives: 999, bombRate: 0, spawnInterval: 1.25, speedMult: 0.48, batchMin: 2, batchMax: 4 },
 };
 
 export function createGameState(mode: GameMode): GameState {
   const config = MODE_CONFIGS[mode];
-  return {
+  const state: GameState = {
     tokens: [],
     slicedHalves: [],
     particles: [],
@@ -127,9 +136,27 @@ export function createGameState(mode: GameMode): GameState {
     spawnTimer: 0.6,
     nextId: 0,
     elapsed: 0,
-    timeLeft: mode === 'zen' ? 90 : undefined,
     soundQueue: [],
+    singularity: { x: 0, y: 0, active: false, charge: 0, radius: 0 },
   };
+
+  if (mode === 'zen') {
+    state.timeLeft = 90;
+  }
+
+  return state;
+}
+
+function isPointInPolygon(point: { x: number, y: number }, polygon: { x: number, y: number }[]) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    const intersect = ((yi > point.y) !== (yj > point.y))
+      && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }
 
 export function updateGameState(state: GameState, dt: number, w: number, h: number): void {
@@ -146,17 +173,39 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
   // Combo text timer
   if (state.comboTextTimer > 0) state.comboTextTimer -= dt;
 
-  // Spawn
-  state.spawnTimer -= dt;
-  if (state.spawnTimer <= 0) {
-    spawnTokenBatch(state, w, h);
-    const config = MODE_CONFIGS[state.mode];
-    const difficultyMult = Math.max(0.5, 1 - state.elapsed / 150);
-    state.spawnTimer = config.spawnInterval * difficultyMult;
+  // --- SINGULARITY UPDATE (Zen Only) ---
+  if (state.mode === 'zen' && state.singularity.active) {
+    const s = state.singularity;
+
+    // Pulse animation
+    s.radius = 40 + Math.sin(state.elapsed * 10) * 10;
+
+    for (const token of state.tokens) {
+      if (token.sliced) continue;
+
+      const dx = s.x - token.x;
+      const dy = s.y - token.y;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq < SINGULARITY_RADIUS * SINGULARITY_RADIUS) {
+        const dist = Math.sqrt(distSq);
+        const force = (1 - dist / SINGULARITY_RADIUS) * SINGULARITY_PULL;
+
+        // Pull toward center
+        token.vx += (dx / dist) * force * dt;
+        token.vy += (dy / dist) * force * dt;
+
+        // Add orbital motion (sideways force)
+        const orbitX = -dy / dist;
+        const orbitY = dx / dist;
+        token.vx += orbitX * force * 0.4 * dt;
+        token.vy += orbitY * force * 0.4 * dt;
+      }
+    }
   }
 
-  // Timer logic for Zen/Chill mode
-  if (state.timeLeft !== undefined && !state.gameOver) {
+  // Timer logic for Zen Mode
+  if (state.mode === 'zen' && state.timeLeft !== undefined) {
     state.timeLeft -= dt;
     if (state.timeLeft <= 0) {
       state.timeLeft = 0;
@@ -164,6 +213,18 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
       state.soundQueue.push({ type: 'gameOver' });
     }
   }
+
+  // Spawn
+  state.spawnTimer -= dt;
+  if (state.spawnTimer <= 0) {
+    spawnTokenBatch(state, w, h);
+    const config = MODE_CONFIGS[state.mode];
+    const difficultyMult = Math.max(0.5, 1 - state.elapsed / 150);
+    const landscapeSpawnMult = w > h ? 0.92 : 1.0; // ~8% faster spawns in landscape
+    state.spawnTimer = config.spawnInterval * difficultyMult * landscapeSpawnMult;
+  }
+
+
 
   // Physics
   const gravity = h * 0.35;
@@ -183,7 +244,7 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
         state.combo = 0;
         state.comboText = '';
         state.lives--;
-        state.shakeAmount = 3;
+        state.shakeAmount = 1; // Greatly reduced shake for missed tokens
         if (state.lives <= 0) {
           state.gameOver = true;
           state.soundQueue.push({ type: 'gameOver' });
@@ -246,11 +307,16 @@ function spawnTokenBatch(state: GameState, w: number, h: number): void {
     const spawnX = w * (0.1 + Math.random() * 0.8);
     const spawnY = h + radius * 2;
 
-    const speedMult = config.speedMult;
+    // 15% faster speed in landscape
+    const speedMult = config.speedMult * (w > h ? 1.15 : 1.0);
     const launchHeight = isBomb ? (1.3 + Math.random() * 0.2) : (1.8 + Math.random() * 0.3);
     const vy = -(h * launchHeight) * speedMult;
     const centerBias = (w / 2 - spawnX) * 0.15;
-    const vx = (centerBias + (Math.random() - 0.5) * w * 0.25) * speedMult;
+    const vx = (centerBias + (Math.random() - 0.5) * w * 0.3) * speedMult;
+
+    // Golden tokens (rare bonus)
+    const isGolden = !isBomb && Math.random() < 0.05;
+    const finalPoints = isGolden ? points * 5 : points;
 
     state.tokens.push({
       id: state.nextId++,
@@ -262,10 +328,11 @@ function spawnTokenBatch(state: GameState, w: number, h: number): void {
       rotation: Math.random() * Math.PI * 2,
       rotationSpeed: (Math.random() - 0.5) * 5,
       tokenData,
-      points,
+      points: finalPoints,
       sliced: false,
       isBomb,
       type,
+      isGolden,
     });
   }
 }
@@ -276,6 +343,42 @@ export function checkSlice(
   x2: number, y2: number,
 ): void {
   if (state.gameOver) return;
+
+  // Check for Singularity Collapse (Zen Mode)
+  if (state.mode === 'zen' && state.singularity.active) {
+    const s = state.singularity;
+    if (lineIntersectsCircle(x1, y1, x2, y2, s.x, s.y, 45)) {
+      // COLLAPSE TRIGGERED!
+      let collapsedCount = 0;
+      for (const token of state.tokens) {
+        if (token.sliced || token.isBomb) continue;
+        const dx = token.x - s.x;
+        const dy = token.y - s.y;
+        if (dx * dx + dy * dy < SINGULARITY_RADIUS * SINGULARITY_RADIUS) {
+          token.sliced = true;
+          state.score += (token.points * 3); // 3x points for singularity collapse
+          state.tokensSliced++;
+          collapsedCount++;
+          spawnParticles(state, token.x, token.y, token.tokenData.color, 12);
+        }
+      }
+
+      if (collapsedCount > 0) {
+        state.soundQueue.push({ type: 'zenCollapse' });
+        state.shakeAmount = 4;
+        state.comboText = `GRAVITY COLLAPSE x${collapsedCount}!`;
+        state.comboTextTimer = 2.0;
+        s.active = false;
+        s.charge = 0;
+
+        // Massive center explosion
+        spawnParticles(state, s.x, s.y, '#ffffff', 45);
+        spawnParticles(state, s.x, s.y, '#d8b4fe', 35); // Light purple
+        spawnParticles(state, s.x, s.y, '#9333ea', 25); // Deep purple
+        return; // Swiping through singularity collapses, doesn't slice tokens individually in this frame
+      }
+    }
+  }
 
   for (const token of state.tokens) {
     if (token.sliced) continue;
@@ -341,7 +444,7 @@ export function checkSlice(
         state.lives--;
         state.combo = 0;
         state.comboText = '';
-        state.shakeAmount = 10;
+        state.shakeAmount = 2.5; // Greatly reduced shake for bombs
         spawnParticles(state, token.x, token.y, '#FF4444', 8);
         spawnParticles(state, token.x, token.y, '#FF8800', 5);
         state.soundQueue.push({ type: 'bomb' });
@@ -358,15 +461,16 @@ export function checkSlice(
         state.bestCombo = Math.max(state.bestCombo, state.combo);
 
         if (token.type === 'large') {
-          state.shakeAmount = 4;
+          state.shakeAmount = 0.5; // Minimal shake
         } else {
-          state.shakeAmount = 2.5;
+          state.shakeAmount = 0.2; // Minimal shake
         }
 
         state.comboText = getComboText(state.combo);
         state.comboTextTimer = 1.5;
 
         state.soundQueue.push({ type: 'slice' });
+
         if (state.combo >= 3 && state.combo % 1 === 0) {
           state.soundQueue.push({ type: 'combo', combo: state.combo });
         }

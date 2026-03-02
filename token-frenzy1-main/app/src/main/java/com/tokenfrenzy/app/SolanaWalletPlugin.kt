@@ -259,7 +259,7 @@ class SolanaWallet(private val activity: ComponentActivity) {
         isMinting = true
         activity.lifecycleScope.launch {
             try {
-                val lamports = 2_500_000L  // 0.0025 SOL
+                val lamports = 5_000_000L  // 0.005 SOL
                 val treasuryKey = SolanaPublicKey(Base58.decode("pR7YkBj2AsRLB7sSNJEyaSnengSF3c9UUQDH1y26NBi"))
 
                 val blockhash = withContext(Dispatchers.IO) {

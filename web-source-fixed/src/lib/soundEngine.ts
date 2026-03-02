@@ -257,6 +257,43 @@ export function playGameOver(): void {
   });
 }
 
+/** Singularity Collapse sound — deep powerful implosion followed by a vacuum blast */
+export function playZenCollapse(): void {
+  const ctx = getCtx();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+
+  // Implosion thud
+  const implosion = ctx.createOscillator();
+  implosion.type = 'sine';
+  implosion.frequency.setValueAtTime(400, now);
+  implosion.frequency.exponentialRampToValueAtTime(10, now + 0.3);
+
+  const gain = createGain(ctx, 0.4);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.4 * _volume, now + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+  implosion.connect(gain);
+  implosion.start(now);
+  implosion.stop(now + 0.4);
+
+  // High-frequency vacuum "shink"
+  const shink = ctx.createOscillator();
+  shink.type = 'triangle';
+  shink.frequency.setValueAtTime(2000, now);
+  shink.frequency.exponentialRampToValueAtTime(4000, now + 0.15);
+
+  const shinkGain = createGain(ctx, 0.2);
+  shinkGain.gain.setValueAtTime(0.2 * _volume, now);
+  shinkGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+  shink.connect(shinkGain);
+  shink.start(now);
+  shink.stop(now + 0.2);
+}
+
 // ===== CONTROLS =====
 
 export function isMuted(): boolean {

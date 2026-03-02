@@ -21,7 +21,7 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
             setIsLoading(true);
             setStatus("Opening wallet...");
 
-            // Native call: pays 0.0025 SOL + mints NFT via Helius
+            // Native call: pays 0.005 SOL + mints NFT via Helius
             const result = await mintGamePass();
             console.log('[MintOverlay] Mint result:', result);
 
@@ -148,7 +148,7 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                             {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
                             {isLoading
                                 ? (status.includes('Opening') ? 'OPENING WALLET...' : 'WAITING FOR CONFIRMATION...')
-                                : 'MINT PASS (0.0025 SOL)'}
+                                : 'MINT PASS'}
                         </button>
                     )}
                 </div>

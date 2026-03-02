@@ -7,6 +7,8 @@ export interface PlayerProgress {
   selectedBoard: string;
   isVertical: boolean;
   hasAcceptedTerms: boolean;
+  username?: string;
+  avatarIndex?: number;
 }
 
 export interface LeaderboardEntry {
@@ -36,6 +38,8 @@ export function loadProgress(): PlayerProgress {
         selectedBoard: parsed.selectedBoard ?? 'neon-grid',
         isVertical: parsed.isVertical ?? true,
         hasAcceptedTerms: parsed.hasAcceptedTerms ?? false,
+        username: parsed.username ?? '',
+        avatarIndex: parsed.avatarIndex ?? 0,
       };
     }
   } catch { /* ignore */ }
@@ -48,6 +52,8 @@ export function loadProgress(): PlayerProgress {
     selectedBoard: 'neon-grid',
     isVertical: true,
     hasAcceptedTerms: false,
+    username: '',
+    avatarIndex: 0,
   };
 }
 
@@ -87,6 +93,13 @@ export function setIsVertical(isVertical: boolean): void {
 export function setHasAcceptedTerms(accepted: boolean): void {
   const progress = loadProgress();
   progress.hasAcceptedTerms = accepted;
+  saveProgress(progress);
+}
+
+export function saveProfile(username: string, avatarIndex: number): void {
+  const progress = loadProgress();
+  progress.username = username;
+  progress.avatarIndex = avatarIndex;
   saveProgress(progress);
 }
 

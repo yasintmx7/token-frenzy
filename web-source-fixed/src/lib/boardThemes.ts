@@ -4,6 +4,10 @@ import goldMarbleBg from '@/assets/skins/gold-marble.png';
 import darkCarbonBg from '@/assets/skins/dark-carbon.png';
 import iceBlueBg from '@/assets/skins/ice-blue.png';
 import lavaRedBg from '@/assets/skins/lava-red.png';
+import emeraldForestBg from '@/assets/skins/emerald-forest.png';
+import holoChromeBg from '@/assets/skins/holo-chrome.png';
+import crimsonVoidBg from '@/assets/skins/crimson-void.png';
+import sapphireSeaBg from '@/assets/skins/sapphire-sea.png';
 
 export interface BoardTheme {
   id: string;
@@ -76,6 +80,46 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: lavaRedBg,
     starsOpacity: 0.2,
     preview: lavaRedBg,
+  },
+  {
+    id: 'emerald-forest',
+    name: 'Mystic Emerald',
+    emoji: '🍃',
+    description: 'Deep woodland mystical green.',
+    background: '#041c10',
+    backgroundImage: emeraldForestBg,
+    starsOpacity: 0.1,
+    preview: emeraldForestBg,
+  },
+  {
+    id: 'holo-chrome',
+    name: 'Prism Chrome',
+    emoji: '💿',
+    description: 'Sleek holographic abstract gradient.',
+    background: '#141417',
+    backgroundImage: holoChromeBg,
+    starsOpacity: 0,
+    preview: holoChromeBg,
+  },
+  {
+    id: 'crimson-void',
+    name: 'Velvet Void',
+    emoji: '🍷',
+    description: 'Dark and moody cinematic crimson.',
+    background: '#1f0408',
+    backgroundImage: crimsonVoidBg,
+    starsOpacity: 0.1,
+    preview: crimsonVoidBg,
+  },
+  {
+    id: 'sapphire-sea',
+    name: 'Deep Sapphire',
+    emoji: '🌊',
+    description: 'Bioluminescent deep-sea blues.',
+    background: '#030d24',
+    backgroundImage: sapphireSeaBg,
+    starsOpacity: 0.2,
+    preview: sapphireSeaBg,
   },
 ];
 

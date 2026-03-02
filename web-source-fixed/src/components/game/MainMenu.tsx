@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Zap, Flame, Waves, Gamepad2, Trophy, User, Paintbrush, Lock } from 'lucide-react';
+import { Zap, Flame, Waves, Gamepad2, Trophy, User, Paintbrush, Lock, Coins } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { type GameMode } from '@/lib/gameEngine';
@@ -100,14 +100,17 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
 
       {/* ── Top bar ── */}
       <div className="relative z-10 flex items-center justify-between px-4 pt-4 pb-2 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 flex-shrink-0" style={{ color: 'hsl(var(--neon-purple))' }} />
-          <span className="font-display font-bold text-[11px] tracking-wider neon-text-purple" style={{ color: 'hsl(var(--neon-purple))' }}>
-            TOKEN FRENZY
-          </span>
-          <div className="glass-panel rounded-full px-3 py-1 text-[10px] font-semibold font-sans">
-            <span style={{ color: 'hsl(var(--neon-amber))' }} className="font-bold neon-text-amber">{progress.totalScore.toLocaleString()}</span>
-            <span className="text-muted-foreground ml-1">COINS</span>
+        <div className="flex items-center gap-3">
+          <div className="glass-panel rounded-full px-4 py-1.5 flex items-center gap-2.5 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.15)] animate-fade-in">
+            <Coins className="w-6 h-6 text-amber-400" style={{ filter: 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.5))' }} />
+            <div className="flex flex-col -gap-1">
+              <span className="text-lg font-display font-black text-amber-400 neon-text-amber tabular-nums leading-none">
+                {progress.totalScore.toLocaleString()}
+              </span>
+              <span className="text-[8px] font-black text-amber-600/60 uppercase tracking-[0.2em] leading-none mt-0.5">
+                TOTAL COINS
+              </span>
+            </div>
           </div>
         </div>
         <div className="scale-90 flex-shrink-0">
@@ -188,9 +191,9 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
           </div>
         )}
 
-        {/* SKINS TAB — no scroll, lock logic */}
+        {/* SKINS TAB — scrollable, landscape fixes */}
         {activeTab === 'skins' && (
-          <div className="flex-1 overflow-hidden flex flex-col px-4 pt-3 pb-2 animate-fade-in">
+          <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col px-4 pt-3 pb-24 animate-fade-in">
             {/* Compact header */}
             <div className="flex items-center justify-center mb-2 flex-shrink-0 text-center">
               <div>
@@ -230,6 +233,7 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
               progress={progress}
               onOpenLegal={(type) => setLegalModal({ isOpen: true, type })}
               isLandscape={isLandscape}
+              hasPass={hasPass}
             />
           </div>
         )}
@@ -275,16 +279,31 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
 // ─── Profile Dashboard ────────────────────────────────────────────────────────
 
 import { useWallet as useWalletHook } from '@solana/wallet-adapter-react';
-import { Copy, CheckCircle, TrendingUp, Target, Activity, Medal, ShieldCheck, Shield, FileText, ChevronRight } from 'lucide-react';
-import { shortenAddress } from '@/lib/storage';
+import { Copy, CheckCircle, TrendingUp, Target, Activity, Medal, ShieldCheck, Shield, FileText, ChevronRight, Edit2, Check, X, Smile, Ghost, Bot } from 'lucide-react';
+import { shortenAddress, saveProfile } from '@/lib/storage';
 
-function ProfileDashboard({ progress, onOpenLegal, isLandscape }: {
+const AVATARS = [User, Smile, Ghost, Bot, Zap];
+const AVATAR_COLORS = [
+  'linear-gradient(135deg,#9333ea,#ec4899)', // purple-pink
+  'linear-gradient(135deg,#eab308,#f97316)', // yellow-orange
+  'linear-gradient(135deg,#22d3ee,#3b82f6)', // cyan-blue
+  'linear-gradient(135deg,#10b981,#14b8a6)', // emerald-teal
+  'linear-gradient(135deg,#f43f5e,#fbbf24)'  // rose-amber
+];
+
+function ProfileDashboard({ progress, onOpenLegal, isLandscape, hasPass }: {
   progress: any,
   onOpenLegal: (type: 'privacy' | 'terms') => void,
-  isLandscape?: boolean
+  isLandscape?: boolean;
+  hasPass?: boolean | null;
 }) {
   const { publicKey, connected } = useWalletHook();
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(progress.username || '');
+  const [editAvatar, setEditAvatar] = useState(progress.avatarIndex || 0);
+
+  const CurrentAvatar = AVATARS[progress.avatarIndex || 0] || User;
 
   const getRank = (score: number) => {
     if (score > 100000) return { name: 'TOKEN OVERLORD', color: '#c084fc', glow: 'rgba(192,132,252,0.25)' };
@@ -302,9 +321,22 @@ function ProfileDashboard({ progress, onOpenLegal, isLandscape }: {
     }
   };
 
-  const displayName = connected && publicKey
+  const displayName = progress.username ? progress.username : (connected && publicKey
     ? shortenAddress(publicKey.toString())
-    : 'GUEST PLAYER';
+    : 'GUEST PLAYER');
+
+  const handleSave = () => {
+    saveProfile(editName, editAvatar);
+    progress.username = editName;
+    progress.avatarIndex = editAvatar;
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditName(progress.username || '');
+    setEditAvatar(progress.avatarIndex || 0);
+    setIsEditing(false);
+  };
 
   return (
     <div className={`flex ${isLandscape ? 'flex-row items-center justify-center max-w-4xl mx-auto gap-6' : 'flex-col gap-3'}`}>
@@ -312,49 +344,103 @@ function ProfileDashboard({ progress, onOpenLegal, isLandscape }: {
       {/* Left Column (If Landscape) / Top (If Portrait) */}
       <div className={`flex flex-col gap-3 ${isLandscape ? 'flex-[0.8] w-full max-w-sm' : ''}`}>
 
-        {/* ── Header card ── */}
-        <div
-          className="rounded-2xl p-4 flex items-center gap-4"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-        >
-          {/* Avatar with status dot */}
-          <div className="relative flex-shrink-0">
-            <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
-            >
-              <User className="w-7 h-7 text-white" />
-            </div>
-            {connected && (
-              <div
-                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-black animate-pulse"
-                style={{ background: '#4ade80' }}
-              />
-            )}
-          </div>
-
-          {/* Identity */}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-display font-black text-white leading-tight truncate">
-              {displayName}
-            </p>
-            <div className="flex items-center gap-2 mt-1.5">
-              <span
-                className="text-[9px] font-display font-bold tracking-widest px-2 py-0.5 rounded-full"
-                style={{ color: rank.color, background: rank.glow, border: `1px solid ${rank.color}40` }}
-              >
-                {rank.name}
-              </span>
-              {connected && publicKey && (
-                <button onClick={copyAddress} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
-                  {copied
-                    ? <CheckCircle className="w-3.5 h-3.5 text-green-400" />
-                    : <Copy className="w-3.5 h-3.5 text-white/40" />}
+        {/* ── Header card or Edit UI ── */}
+        {isEditing ? (
+          <div
+            className="rounded-2xl p-4 flex flex-col gap-3 animate-fade-in"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            <div className="flex gap-2 justify-between">
+              {AVATARS.map((Icon, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setEditAvatar(idx)}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${editAvatar === idx ? 'scale-110 border-2 border-white' : 'opacity-40 hover:opacity-100'}`}
+                  style={{ background: AVATAR_COLORS[idx] }}
+                >
+                  <Icon className="w-5 h-5 text-white" />
                 </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Enter Username"
+              className="bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-display text-center outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.3)] transition-all"
+              maxLength={15}
+            />
+            <div className="flex gap-2 mt-1">
+              <button onClick={handleCancel} className="flex-1 bg-white/10 hover:bg-white/20 text-white transition-colors rounded-lg py-2 text-xs font-bold font-display flex items-center justify-center gap-1">
+                <X className="w-3.5 h-3.5" /> CANCEL
+              </button>
+              <button onClick={handleSave} className="flex-1 bg-purple-500 hover:bg-purple-400 text-white transition-colors rounded-lg py-2 text-xs font-bold font-display flex items-center justify-center gap-1 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                <Check className="w-3.5 h-3.5" /> SAVE
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={`rounded-2xl p-4 flex items-center gap-4 animate-fade-in relative ${hasPass ? 'overflow-hidden' : ''}`}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: hasPass ? '2px solid rgba(251,191,36,0.6)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow: hasPass ? 'inset 0 0 20px rgba(251,191,36,0.15), 0 0 15px rgba(251,191,36,0.2)' : 'none'
+            }}
+          >
+            {/* Ambient gold glow if Game Pass */}
+            {hasPass && (
+              <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/10 via-amber-300/5 to-transparent pointer-events-none" />
+            )}
+
+            {/* Avatar with status dot */}
+            <div className="relative flex-shrink-0 z-10">
+              <div
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center ${hasPass ? 'border-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.5)]' : ''}`}
+                style={{ background: AVATAR_COLORS[progress.avatarIndex || 0] }}
+              >
+                <CurrentAvatar className="w-7 h-7 text-white" />
+              </div>
+              {connected && (
+                <div
+                  className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-black animate-pulse"
+                  style={{ background: '#4ade80' }}
+                />
               )}
             </div>
+
+            {/* Identity */}
+            <div className="flex-1 min-w-0 z-10">
+              <div className="flex justify-between items-center gap-2">
+                <p className="text-sm font-display font-black text-white leading-tight truncate">
+                  {displayName}
+                </p>
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 transition-all flex-shrink-0 border border-white/10"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-white/70" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 mt-1.5">
+                <span
+                  className="text-[9px] font-display font-bold tracking-widest px-2 py-0.5 rounded-full"
+                  style={{ color: rank.color, background: rank.glow, border: `1px solid ${rank.color}40` }}
+                >
+                  {rank.name}
+                </span>
+                {connected && publicKey && (
+                  <button onClick={copyAddress} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
+                    {copied
+                      ? <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+                      : <Copy className="w-3.5 h-3.5 text-white/40" />}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
 
 
@@ -423,8 +509,8 @@ function SkinsGrid({
   isLandscape?: boolean;
 }) {
   return (
-    <div className="flex-1 min-h-0 flex items-center justify-center">
-      <div className={`grid ${isLandscape ? 'grid-cols-3' : 'grid-cols-2'} gap-2 w-full max-w-2xl`}>
+    <div className="flex-1 min-h-0 flex items-start justify-center pt-2">
+      <div className={`grid ${isLandscape ? 'grid-cols-3 gap-3' : 'grid-cols-2 gap-2'} w-full max-w-2xl`}>
         {BOARD_THEMES.map((theme, index) => {
           const isSelected = theme.id === selectedId;
           const isLocked = !hasPass && index > 0;
@@ -437,7 +523,7 @@ function SkinsGrid({
               }}
               className="relative rounded-xl overflow-hidden cursor-pointer transition-all active:scale-[0.98]"
               style={{
-                aspectRatio: '16/9',
+                aspectRatio: isLandscape ? '21/9' : '16/9',
                 border: isSelected ? '2px solid hsl(var(--neon-cyan))' : '1px solid rgba(255,255,255,0.1)',
                 boxShadow: isSelected ? '0 0 15px hsla(var(--neon-cyan), 0.3)' : undefined,
                 opacity: isLocked ? 0.6 : 1,

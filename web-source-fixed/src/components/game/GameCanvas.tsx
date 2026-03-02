@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   type GameState, type GameMode, type FlyingToken, type SlicedHalf, type Particle, type SlicePoint,
-  createGameState, updateGameState, checkSlice,
+  createGameState, updateGameState, checkSlice, SINGULARITY_RADIUS,
 } from '@/lib/gameEngine';
+import { TOKENS } from '@/lib/tokens';
 import { getSkinById, type BladeSkin } from '@/lib/bladeSkins';
 import { getThemeById, type BoardTheme } from '@/lib/boardThemes';
 import { loadProgress } from '@/lib/storage';
-import { playSlice, playCombo, playBomb, playGameOver, isMuted, toggleMute } from '@/lib/soundEngine';
+import { playSlice, playCombo, playBomb, playGameOver, playZenCollapse, isMuted, toggleMute } from '@/lib/soundEngine';
 import { Volume2, VolumeX, Pause, Play, Home, RotateCcw } from 'lucide-react';
 
 // ===== IMAGE CACHE =====
@@ -66,13 +67,19 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
   const bladeSkinRef = useRef<BladeSkin>(getSkinById(loadProgress().selectedBlade));
   const boardThemeRef = useRef<BoardTheme>(getThemeById(loadProgress().selectedBoard));
   const juiceRef = useRef({ zoom: 1, timeScale: 1, flow: 0 });
-  const [hud, setHud] = useState<HudState>({
-    score: 0,
-    lives: mode === 'zen' ? 999 : 3,
-    combo: 0,
-    comboText: '',
-    timeLeft: mode === 'zen' ? 90 : undefined,
-  });
+  const scoreRef = useRef<HTMLDivElement>(null);
+  const livesRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const timerRef = useRef<HTMLDivElement>(null);
+  const comboWrapperRef = useRef<HTMLDivElement>(null);
+  const comboValueRef = useRef<HTMLDivElement>(null);
+  const comboPulseRef = useRef<HTMLDivElement>(null);
+  const fpsRef = useRef<HTMLDivElement>(null);
+  const longPressTimer = useRef<any>(null); // For Singularity activation
+
+  const perfData = useRef({ lastTime: 0, drops: 0, frameCount: 0, fps: 60, isLagging: false });
+  const recentFrames = useRef<number[]>([]);
+
+  const [showPerf, setShowPerf] = useState(false);
   const [muted, setMuted] = useState(isMuted());
   const [paused, setPaused] = useState(false);
 
@@ -126,24 +133,62 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
       const { x, y } = getLocalCoords(clientX, clientY);
       isSwipingRef.current = true;
       stateRef.current.bladeTrail = [{ x, y, time: Date.now() }];
+
+      // Zen Mode: Start Long-press timer for Singularity
+      if (stateRef.current.mode === 'zen') {
+        if (longPressTimer.current) clearTimeout(longPressTimer.current);
+        longPressTimer.current = setTimeout(() => {
+          stateRef.current.singularity.active = true;
+          stateRef.current.singularity.x = x;
+          stateRef.current.singularity.y = y;
+        }, 500);
+      }
     };
 
     const handleMove = (clientX: number, clientY: number) => {
       if (!isSwipingRef.current) return;
       const { x, y } = getLocalCoords(clientX, clientY);
-      const trail = stateRef.current.bladeTrail;
+      const state = stateRef.current;
+
+      // Update singularity position if active
+      if (state.mode === 'zen' && state.singularity.active) {
+        state.singularity.x = x;
+        state.singularity.y = y;
+      }
+
+      const trail = state.bladeTrail;
       if (trail.length > 0) {
         const last = trail[trail.length - 1];
-        checkSlice(stateRef.current, last.x, last.y, x, y);
+
+        // Cancel long-press if finger moves too much before activation
+        if (state.mode === 'zen' && !state.singularity.active) {
+          const dist = Math.hypot(x - last.x, y - last.y);
+          if (dist > 30) {
+            if (longPressTimer.current) {
+              clearTimeout(longPressTimer.current);
+              longPressTimer.current = null;
+            }
+          }
+        }
+
+        checkSlice(state, last.x, last.y, x, y);
       }
       trail.push({ x, y, time: Date.now() });
       const now = Date.now();
-      while (trail.length > 0 && now - trail[0].time > 150) trail.shift();
+      const trailLimit = state.mode === 'zen' ? 800 : 150;
+      while (trail.length > 0 && now - trail[0].time > trailLimit) trail.shift();
     };
 
     const handleEnd = () => {
       isSwipingRef.current = false;
       stateRef.current.bladeTrail = [];
+
+      // Clear singularity on release
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+      stateRef.current.singularity.active = false;
     };
 
     const onMouseDown = (e: MouseEvent) => {
@@ -185,6 +230,22 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
     };
   }, []);
 
+  // Handle Android Native Back Button to trigger Pause instead of Exit
+  useEffect(() => {
+    window.onGameBack = () => {
+      if (!paused) {
+        setPaused(true);
+      } else {
+        // If already paused, the next back press exits to menu
+        onExit();
+      }
+    };
+
+    return () => {
+      window.onGameBack = undefined;
+    };
+  }, [paused, onExit]);
+
   // Game loop
   useEffect(() => {
     if (paused || forcePaused) {
@@ -195,10 +256,27 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
     let rafId: number;
 
     const loop = (time: number) => {
-      const dt = lastTimeRef.current
-        ? Math.min((time - lastTimeRef.current) / 1000, 0.05)
-        : 0.016;
+      let dt = 0.016;
+      if (lastTimeRef.current) {
+        dt = Math.min((time - lastTimeRef.current) / 1000, 0.05);
+      }
+
+      const frameMs = time - lastTimeRef.current;
       lastTimeRef.current = time;
+
+      if (frameMs > 25 && perfData.current.frameCount > 10) perfData.current.drops++; // Log dropped frames
+      recentFrames.current.push(frameMs);
+      if (recentFrames.current.length > 30) recentFrames.current.shift();
+      perfData.current.frameCount++;
+
+      if (perfData.current.frameCount % 15 === 0) {
+        const avgMs = recentFrames.current.reduce((a, b) => a + b, 0) / recentFrames.current.length;
+        perfData.current.fps = 1000 / (avgMs || 16.6);
+        perfData.current.isLagging = perfData.current.fps < 45;
+        if (fpsRef.current) {
+          fpsRef.current.innerText = `FPS: ${Math.round(perfData.current.fps)} | Drop: ${perfData.current.drops}`;
+        }
+      }
 
       const canvas = canvasRef.current;
       if (!canvas) { rafId = requestAnimationFrame(loop); return; }
@@ -222,6 +300,7 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
       juiceRef.current.flow += (targetFlow - juiceRef.current.flow) * (dt * 3);
 
       const effectiveDt = dt * juiceRef.current.timeScale;
+      state.isLagging = perfData.current.isLagging;
       updateGameState(state, effectiveDt, width, height);
 
       // Render
@@ -246,25 +325,65 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
       renderGame(ctx, state, bladeSkinRef.current);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-      // Sync HUD
-      setHud(prev => {
-        if (
-          prev.score !== state.score ||
-          prev.lives !== state.lives ||
-          prev.combo !== state.combo ||
-          prev.comboText !== state.comboText ||
-          prev.timeLeft !== state.timeLeft
-        ) {
-          return {
-            score: state.score,
-            lives: state.lives,
-            combo: state.combo,
-            comboText: state.comboText,
-            timeLeft: state.timeLeft,
-          };
+      // Zero UI Overhead: Direct DOM updates
+      if (scoreRef.current && scoreRef.current.innerText !== state.score.toString()) {
+        scoreRef.current.innerText = state.score.toString();
+      }
+
+      if (state.mode !== 'zen' && state.lives >= 0) {
+        livesRefs.current.forEach((ref, i) => {
+          if (!ref) return;
+          const active = i < state.lives;
+          if (active) {
+            ref.style.color = 'hsl(var(--foreground))';
+            ref.style.background = 'hsla(0, 85%, 55%, 0.8)';
+            ref.style.boxShadow = '0 0 12px hsla(0, 85%, 55%, 0.5)';
+          } else {
+            ref.style.color = 'hsla(var(--muted-foreground), 0.3)';
+            ref.style.background = 'hsla(0, 0%, 100%, 0.05)';
+            ref.style.boxShadow = 'none';
+          }
+        });
+      }
+
+
+
+      if (timerRef.current && state.timeLeft !== undefined) {
+        const tStr = Math.ceil(state.timeLeft) + 's';
+        if (timerRef.current.innerText !== tStr) {
+          timerRef.current.innerText = tStr;
+          if (state.timeLeft < 10) {
+            timerRef.current.classList.add('animate-pulse', 'text-red-500');
+            timerRef.current.classList.remove('text-cyan-400');
+          } else {
+            timerRef.current.classList.remove('animate-pulse', 'text-red-500');
+            timerRef.current.classList.add('text-cyan-400');
+          }
         }
-        return prev;
-      });
+      }
+
+      if (comboPulseRef.current) {
+        if (state.combo >= 10) {
+          comboPulseRef.current.style.display = 'block';
+        } else {
+          comboPulseRef.current.style.display = 'none';
+        }
+      }
+
+      if (comboWrapperRef.current && comboValueRef.current) {
+        if (state.combo >= 3 && state.comboText) {
+          comboWrapperRef.current.style.display = 'block';
+          const newText = state.combo + 'x';
+          if (comboValueRef.current.innerText !== newText) {
+            comboValueRef.current.innerText = newText;
+            comboValueRef.current.classList.remove('animate-scale-in');
+            void comboValueRef.current.offsetWidth;
+            comboValueRef.current.classList.add('animate-scale-in');
+          }
+        } else {
+          comboWrapperRef.current.style.display = 'none';
+        }
+      }
 
       // Drain sound queue
       for (const event of state.soundQueue) {
@@ -342,41 +461,67 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
           background: 'radial-gradient(circle, transparent 40%, hsla(var(--neon-purple), 0.15) 100%)',
           boxShadow: 'inset 0 0 100px hsla(var(--neon-cyan), 0.2)',
         }}>
-        {hud.combo >= 10 && (
-          <div className="absolute inset-0 bg-white/[0.02] animate-pulse" />
-        )}
+        <div ref={comboPulseRef} style={{ display: 'none' }} className="absolute inset-0 bg-white/[0.02] animate-pulse" />
       </div>
+
+
+
+      {showPerf && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 text-[10px] sm:text-xs text-white bg-black/80 px-4 py-2 rounded-full font-mono font-bold select-none cursor-pointer" onClick={() => setShowPerf(false)}>
+          <span ref={fpsRef}>FPS: -- | Drop: 0</span>
+        </div>
+      )}
+
+      {/* Secret toggle zone for Perf HUD */}
+      {!showPerf && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 w-20 h-10 cursor-pointer" onClick={() => setShowPerf(true)} />
+      )}
 
       {/* HUD */}
       <div className="absolute top-0 left-0 right-0 p-4 sm:p-6 flex justify-between items-start pointer-events-none z-10">
         <div className="glass-panel rounded-2xl px-4 py-3">
-          <div className="text-3xl sm:text-5xl font-display font-bold"
+          <div ref={scoreRef} className="text-3xl sm:text-5xl font-display font-bold"
             style={{
               background: 'var(--gradient-score)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}>
-            {hud.score}
+            0
           </div>
           <div className="text-[10px] sm:text-xs tracking-[0.3em] font-display mt-1 text-muted-foreground">
             SCORE
           </div>
         </div>
+
+        {/* Central Timer for Zen Mode */}
+        {mode === 'zen' && (
+          <div className="absolute left-1/2 -translate-x-1/2 top-4 sm:top-6 pointer-events-none">
+            <div className="glass-panel rounded-2xl px-6 py-2 flex flex-col items-center border-cyan-500/30">
+              <div
+                ref={timerRef}
+                className="text-2xl sm:text-4xl font-display font-black text-cyan-400 tracking-tight"
+                style={{ filter: 'drop-shadow(0 0 8px rgba(34, 211, 238, 0.4))' }}
+              >
+                90s
+              </div>
+              <div className="text-[9px] tracking-[0.3em] font-black text-cyan-500/60 uppercase -mt-0.5">
+                TIME LEFT
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-start gap-2">
           {mode !== 'zen' && (
             <div className="glass-panel rounded-2xl px-3 py-2 flex gap-1.5">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div
                   key={i}
-                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm transition-all duration-300 ${i < hud.lives
-                    ? 'text-foreground'
-                    : 'text-muted-foreground/30'
-                    }`}
-                  style={i < hud.lives ? {
+                  ref={(el) => { livesRefs.current[i] = el; }}
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-sm transition-all duration-300 text-foreground"
+                  style={{
                     background: 'hsla(0, 85%, 55%, 0.8)',
                     boxShadow: '0 0 12px hsla(0, 85%, 55%, 0.5)',
-                  } : {
-                    background: 'hsla(0, 0%, 100%, 0.05)',
                   }}
                 >
                   ♥
@@ -384,17 +529,7 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
               ))}
             </div>
           )}
-          {/* Zen Mode Timer Display */}
-          {mode === 'zen' && hud.timeLeft !== undefined && (
-            <div className="glass-panel rounded-2xl px-4 py-2 flex flex-col items-center min-w-[100px] border-cyan-500/30">
-              <div className={`text-2xl sm:text-3xl font-display font-bold tabular-nums ${hud.timeLeft < 10 ? 'animate-pulse text-red-500' : 'text-cyan-400'}`}>
-                {Math.ceil(hud.timeLeft)}s
-              </div>
-              <div className="text-[10px] sm:text-[11px] tracking-[0.2em] font-display text-cyan-400/60 uppercase">
-                TIME REMAINING
-              </div>
-            </div>
-          )}
+
           <button
             onClick={() => setMuted(toggleMute())}
             className="pointer-events-auto glass-panel w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-all hover:scale-110 active:scale-95"
@@ -450,22 +585,21 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
       )}
 
       {/* Combo popup */}
-      {hud.combo >= 3 && hud.comboText && (
-        <div
-          className="absolute top-[22%] left-1/2 -translate-x-1/2 pointer-events-none z-10 text-center"
-          key={hud.combo}
-        >
-          <div className="text-5xl sm:text-7xl font-display font-black animate-scale-in"
-            style={{
-              background: 'linear-gradient(135deg, hsl(var(--neon-amber)), hsl(var(--neon-pink)))',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              filter: 'drop-shadow(0 0 30px hsla(38,100%,60%,0.7))',
-            }}>
-            {hud.combo}x
-          </div>
+      <div
+        ref={comboWrapperRef}
+        style={{ display: 'none' }}
+        className="absolute top-[22%] left-1/2 -translate-x-1/2 pointer-events-none z-10 text-center"
+      >
+        <div ref={comboValueRef} className="text-5xl sm:text-7xl font-display font-black"
+          style={{
+            background: 'linear-gradient(135deg, hsl(var(--neon-amber)), hsl(var(--neon-pink)))',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            filter: 'drop-shadow(0 0 30px hsla(38,100%,60%,0.7))',
+          }}>
+          3x
         </div>
-      )}
+      </div>
 
     </div >
   );
@@ -475,6 +609,10 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
 
 function renderGame(ctx: CanvasRenderingContext2D, state: GameState, skin: BladeSkin): void {
   drawBladeTrail(ctx, state.bladeTrail, skin);
+
+  if (state.mode === 'zen') {
+    drawSingularity(ctx, state.singularity);
+  }
 
   for (const token of state.tokens) {
     if (token.sliced) continue;
@@ -502,23 +640,35 @@ function drawToken(ctx: CanvasRenderingContext2D, token: FlyingToken): void {
   const img = getTokenImage(token.tokenData.id);
 
   if (img && img.complete && img.naturalWidth > 0) {
+    // 1. Draw Glow/Aura BEFORE clipping
+    if (token.isGolden) {
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur = 35;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.5)';
+      ctx.fill();
+      ctx.shadowBlur = 0; // Reset after aura
+    }
+
+    // 2. Draw the Image (Clipped)
+    ctx.save();
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.clip();
 
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetX = 4;
-    ctx.shadowOffsetY = 4;
-
     const s = r * 2.1;
     ctx.drawImage(img, -s / 2, -s / 2, s, s);
+    ctx.restore();
 
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-
+    // 3. Optional Overlay Ring
+    if (token.isGolden) {
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   } else {
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
     ctx.shadowBlur = 10;
@@ -883,6 +1033,45 @@ function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]): vo
     ctx.fill();
     ctx.restore();
   }
+}
+
+function drawSingularity(ctx: CanvasRenderingContext2D, s: { x: number, y: number, radius: number, active: boolean }) {
+  if (!s.active) return;
+
+  ctx.save();
+  ctx.translate(s.x, s.y);
+
+  // Outer glowing aura
+  const grad = ctx.createRadialGradient(0, 0, s.radius * 0.5, 0, 0, SINGULARITY_RADIUS);
+  grad.addColorStop(0, 'rgba(147, 51, 234, 0.4)'); // Purple core
+  grad.addColorStop(0.6, 'rgba(49, 46, 129, 0.2)'); // Deep blue pulse
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)'); // Fading
+
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, SINGULARITY_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+
+  // The Black Hole core
+  ctx.shadowColor = 'rgba(147, 51, 234, 1)';
+  ctx.shadowBlur = 25;
+
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.arc(0, 0, s.radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Accretion disk (spinning dashed ring)
+  const time = Date.now() / 1000;
+  ctx.rotate(time * 3);
+  ctx.strokeStyle = '#d8b4fe';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([15, 10]);
+  ctx.beginPath();
+  ctx.arc(0, 0, s.radius + 8, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 export default GameCanvas;

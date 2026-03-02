@@ -32,6 +32,7 @@ declare global {
     __onNativeTxError?: (error: string) => void;
     __onNativeMintSuccess?: (result: string) => void;
     __onNativeMintError?: (error: string) => void;
+    onGameBack?: () => void;
   }
 }
 
@@ -179,13 +180,16 @@ const Game = () => {
   useEffect(() => {
     window.handleAndroidBack = () => {
       if (screen === 'playing') {
-        // During gameplay → go back to menu (acts as pause/exit)
-        handleMenu('play');
+        // If the game component has registered its own specific back handler (for pausing)
+        if (window.onGameBack) {
+          window.onGameBack();
+        } else {
+          handleMenu('play');
+        }
       } else if (screen === 'gameOver') {
         handleMenu('play');
       } else if (screen === 'menu') {
-        // Delegated to MainMenu's own handler (subtab navigation)
-        // MainMenu registers its own window.handleAndroidBack when on subtabs
+        // Handled by MainMenu via its own listener or window.handleAndroidBack override
       }
     };
     return () => { window.handleAndroidBack = undefined; };

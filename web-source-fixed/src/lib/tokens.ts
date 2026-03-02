@@ -32,13 +32,13 @@ export const TOKENS: TokenData[] = [
   { id: 'aave', symbol: 'AAVE', name: 'Aave', category: 'DeFi', color: '#B6509E' },
   { id: 'curve-dao-token', symbol: 'CRV', name: 'Curve', category: 'DeFi', color: '#FFED00' },
   { id: 'maker', symbol: 'MKR', name: 'Maker', category: 'DeFi', color: '#1AAB9B' },
-  { id: 'sushiswap', symbol: 'SUSHI', name: 'SushiSwap', category: 'DeFi', color: '#FA52A0' },
+  { id: 'sushi', symbol: 'SUSHI', name: 'SushiSwap', category: 'DeFi', color: '#FA52A0' },
   { id: 'compound-governance-token', symbol: 'COMP', name: 'Compound', category: 'DeFi', color: '#00D395' },
   { id: '1inch', symbol: '1INCH', name: '1inch', category: 'DeFi', color: '#94A6C3' },
   { id: 'pancakeswap-token', symbol: 'CAKE', name: 'PancakeSwap', category: 'DeFi', color: '#D1884F' },
   { id: 'lido-dao', symbol: 'LDO', name: 'Lido DAO', category: 'DeFi', color: '#00A3FF' },
   { id: 'balancer', symbol: 'BAL', name: 'Balancer', category: 'DeFi', color: '#5B7BF0' },
-  { id: 'synthetix-network-token', symbol: 'SNX', name: 'Synthetix', category: 'DeFi', color: '#00D1FF' },
+  { id: 'havven', symbol: 'SNX', name: 'Synthetix', category: 'DeFi', color: '#00D1FF' },
   { id: 'convex-finance', symbol: 'CVX', name: 'Convex', category: 'DeFi', color: '#3A82F7' },
 
   // Memecoins
@@ -113,16 +113,16 @@ export const TOKENS: TokenData[] = [
   { id: 'bittensor', symbol: 'TAO', name: 'Bittensor', category: 'AI', color: '#7452FF' },
   { id: 'render-token', symbol: 'RENDER', name: 'Render', category: 'AI', color: '#E14EE9' },
   { id: 'fetch-ai', symbol: 'ASI', name: 'Artificial Superintelligence', category: 'AI', color: '#5A60E6' },
-  { id: 'worldcoin-org', symbol: 'WLD', name: 'Worldcoin', category: 'AI', color: '#000000' },
+  { id: 'worldcoin', symbol: 'WLD', name: 'Worldcoin', category: 'AI', color: '#000000' },
   { id: 'arkham', symbol: 'ARKM', name: 'Arkham', category: 'AI', color: '#FFFFFF' },
   { id: 'nosana', symbol: 'NOS', name: 'Nosana', category: 'AI', color: '#BD282D' },
   { id: 'paal-ai', symbol: 'PAAL', name: 'PAAL AI', category: 'AI', color: '#4ADE80' },
   { id: 'zero1-labs', symbol: 'DEAI', name: 'Zero1 Labs', category: 'AI', color: '#020617' },
-  { id: 'ionet', symbol: 'IO', name: 'io.net', category: 'AI', color: '#000000' },
+  { id: 'io', symbol: 'IO', name: 'io.net', category: 'AI', color: '#000000' },
 
   // Layer 2 / Scaling (More)
-  { id: 'zksync-era', symbol: 'ZK', name: 'ZKsync', category: 'Layer 2', color: '#1E69FF' },
-  { id: 'linea', symbol: 'LINEA', name: 'Linea', category: 'Layer 2', color: '#121212' },
+  { id: 'zksync', symbol: 'ZK', name: 'ZKsync', category: 'Layer 2', color: '#1E69FF' },
+  { id: 'base', symbol: 'BASE', name: 'Base', category: 'Layer 2', color: '#0052FF' },
   { id: 'scroll', symbol: 'SCROLL', name: 'Scroll', category: 'Layer 2', color: '#FFD700' },
   { id: 'taiko', symbol: 'TAIKO', name: 'Taiko', category: 'Layer 2', color: '#E81899' },
   { id: 'manta-network', symbol: 'MANTA', name: 'Manta Network', category: 'Layer 2', color: '#00D1FF' },
@@ -140,17 +140,16 @@ export const TOKENS: TokenData[] = [
 
   // Memecoins (More)
   { id: 'popcat', symbol: 'POPCAT', name: 'Popcat', category: 'Memecoins', color: '#F1D4B3' },
-  { id: 'mew', symbol: 'MEW', name: 'cat in a dogs world', category: 'Memecoins', color: '#E395E3' },
+  { id: 'cat-in-a-dogs-world', symbol: 'MEW', name: 'cat in a dogs world', category: 'Memecoins', color: '#E395E3' },
   { id: 'coq-inu', symbol: 'COQ', name: 'Coq Inu', category: 'Memecoins', color: '#FF4E4E' },
-  { id: 'wen', symbol: 'WEN', name: 'Wen', category: 'Memecoins', color: '#00D1FF' },
-  { id: 'dogs', symbol: 'DOGS', name: 'Dogs', category: 'Memecoins', color: '#000000' },
+  { id: 'pepe', symbol: 'PEPE', name: 'Pepe', category: 'Memecoins', color: '#43A449' },
   { id: 'turbos-finance', symbol: 'TURBOS', name: 'Turbos', category: 'Memecoins', color: '#00D1FF' },
 
   // Gaming (More)
   { id: 'ronin', symbol: 'RON', name: 'Ronin', category: 'Gaming', color: '#1273EA' },
   { id: 'beam', symbol: 'BEAM', name: 'Beam', category: 'Gaming', color: '#121212' },
   { id: 'pixels', symbol: 'PIXEL', name: 'Pixels', category: 'Gaming', color: '#7E22CE' },
-  { id: 'portal', symbol: 'PORTAL', name: 'Portal', category: 'Gaming', color: '#000000' },
+  { id: 'chiliz', symbol: 'CHZ', name: 'Chiliz', category: 'Gaming', color: '#CD0124' },
   { id: 'xai', symbol: 'XAI', name: 'Xai', category: 'Gaming', color: '#FF0000' },
   { id: 'prime', symbol: 'PRIME', name: 'Echelon Prime', category: 'Gaming', color: '#FFFFFF' },
 

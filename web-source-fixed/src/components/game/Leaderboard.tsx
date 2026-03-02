@@ -23,7 +23,21 @@ export const Leaderboard = () => {
                 .limit(100);
 
             if (error) throw error;
-            setScores(data || []);
+
+            // Clean up duplicates by wallet - keeping only the first (highest score) entry
+            const sortedData = data || [];
+            const uniqueData: ScoreEntry[] = [];
+            const seenWallets = new Set();
+
+            for (const item of sortedData) {
+                if (!seenWallets.has(item.wallet)) {
+                    seenWallets.add(item.wallet);
+                    uniqueData.push(item);
+                }
+                if (uniqueData.length >= 100) break;
+            }
+
+            setScores(uniqueData);
         } catch (err) {
             console.error('Error fetching leaderboard:', err);
         } finally {
