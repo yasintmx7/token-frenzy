@@ -45,11 +45,12 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
 
       setStatus("Saving score...");
 
-      // 1. Fetch all existing entries for this wallet
+      // 1. Fetch only entries for this wallet AND this mode
       const { data: existingEntries, error: fetchError } = await supabase
         .from('leaderboard')
         .select('score, id')
-        .eq('wallet', walletAddress);
+        .eq('wallet', walletAddress)
+        .eq('mode', stats.mode);
 
       if (fetchError) {
         console.error('Error checking existing scores:', fetchError);
@@ -64,11 +65,12 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
         const currentBestDB = Math.max(...existingEntries.map(e => e.score));
         maxScore = Math.max(maxScore, currentBestDB);
 
-        // 2. Delete ALL existing entries to clean up any duplicates
+        // 2. Delete existing entries for this specific mode
         const { error: deleteError } = await supabase
           .from('leaderboard')
           .delete()
-          .eq('wallet', walletAddress);
+          .eq('wallet', walletAddress)
+          .eq('mode', stats.mode);
 
         if (deleteError) {
           console.error('Error cleaning up leaderboard duplicates:', deleteError);
@@ -76,10 +78,14 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank }: GameOverProps) => {
         }
       }
 
-      // 3. Insert the single consolidated "best" score entry
+      // 3. Insert the single consolidated "best" score entry for this mode
       const { error: dbError } = await supabase
         .from('leaderboard')
-        .insert([{ wallet: walletAddress, score: maxScore }]);
+        .insert([{
+          wallet: walletAddress,
+          score: maxScore,
+          mode: stats.mode
+        }]);
 
       if (!dbError) {
         setIsSubmitted(true);

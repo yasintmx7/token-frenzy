@@ -215,13 +215,15 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
 
         {/* RANK TAB */}
         {activeTab === 'rank' && (
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pt-4 pb-4 animate-fade-in flex flex-col items-center">
-            <div className="w-full max-w-md">
-              <div className="flex items-center justify-center gap-2 mb-4">
+          <div className="flex-1 px-4 pt-4 pb-6 animate-fade-in flex flex-col items-center overflow-hidden h-full">
+            <div className="w-full max-w-lg flex flex-col h-full">
+              <div className="flex items-center justify-center gap-2 mb-4 flex-shrink-0">
                 <Trophy className="w-7 h-7" style={{ color: 'hsl(var(--neon-amber))' }} />
                 <h2 className="text-2xl font-display font-black text-foreground tracking-tight">HALL OF FAME</h2>
               </div>
-              <Leaderboard />
+              <div className="flex-1 min-h-0">
+                <Leaderboard />
+              </div>
             </div>
           </div>
         )}

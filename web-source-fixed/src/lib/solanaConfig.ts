@@ -11,4 +11,4 @@ export const METADATA_URI = "https://ipfs.io/ipfs/bafkreihtopvnmpejrfynggyoc7hd7
 export const ITEM_METADATA_URI = "https://ipfs.io/ipfs/bafkreihtopvnmpejrfynggyoc7hd7rutudk5vrolz5sbxclzadbqccyzku";
 export const GAME_PASS_COLLECTION_ADDRESS = "AAGRLwSB3wgp6fsdTUkSvFjaNTRAS75WHxDyTJubRkSH";
 export const TREASURY_WALLET = "pR7YkBj2AsRLB7sSNJEyaSnengSF3c9UUQDH1y26NBi";
-export const SCORE_SUBMIT_PRICE_SOL = 0.005;
+export const SCORE_SUBMIT_PRICE_SOL = 0.003;
