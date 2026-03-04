@@ -161,7 +161,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
       }} />
 
       <div
-        className="relative z-10 w-full max-w-sm flex flex-col overflow-y-auto max-h-full rounded-3xl animate-scale-in shadow-2xl p-6 gap-4"
+        className="relative z-10 w-full max-w-[340px] flex flex-col overflow-y-auto max-h-full rounded-3xl animate-scale-in shadow-2xl p-5 gap-3"
         style={{
           background: `linear-gradient(180deg, ${boardTheme.background}CC 0%, #000000 100%)`,
           backdropFilter: 'blur(16px)',
@@ -170,9 +170,9 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
         }}
       >
         <div className="flex flex-col items-center shrink-0">
-          <Star className="w-8 h-8 shrink-0 mb-2" style={{ color: 'hsl(var(--neon-amber))', filter: 'drop-shadow(0 0 10px hsla(38,100%,60%,0.6))' }} />
+          <Star className="w-7 h-7 shrink-0 mb-1" style={{ color: 'hsl(var(--neon-amber))', filter: 'drop-shadow(0 0 10px hsla(38,100%,60%,0.6))' }} />
           <h1
-            className="text-3xl font-display font-black tracking-wider uppercase text-center"
+            className="text-2xl font-display font-black tracking-wider uppercase text-center"
             style={{
               background: 'linear-gradient(180deg, hsl(var(--neon-cyan)), hsl(var(--neon-purple)))',
               WebkitBackgroundClip: 'text',
@@ -188,16 +188,18 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
         <div className="flex flex-col items-center gap-1 shrink-0">
           <div className="flex items-baseline gap-2">
             <span
-              className="text-5xl font-display font-black leading-none"
+              className="text-4xl font-display font-black leading-none"
               style={{
                 background: 'var(--gradient-score)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
               }}
             >
-              {stats.score.toLocaleString()}
+              {stats.score >= 1000000
+                ? `${(stats.score / 1000000).toFixed(1).replace(/\.0$/, '')}M`
+                : stats.score.toLocaleString()}
             </span>
-            <span className="text-xl font-display text-muted-foreground font-bold">pts</span>
+            <span className="text-lg font-display text-muted-foreground font-bold">pts</span>
           </div>
 
           {xpData && xpData.xpGained > 0 && (
@@ -224,7 +226,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
             <button
               onClick={connected ? handleScoreSubmit : connect}
               disabled={isLoading}
-              className="w-full h-12 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50"
+              className="w-full h-11 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50"
               style={{
                 background: 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)',
                 boxShadow: '0 0 25px rgba(139, 92, 246, 0.4)',
@@ -245,7 +247,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
             <button
               onClick={handleReviveClick}
               disabled={isLoading}
-              className={`w-full h-12 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold transition-all border group
+              className={`w-full h-11 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold transition-all border group
                 ${(progress.revives > 0 || connected)
                   ? 'border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 active:scale-95'
                   : 'border-white/5 bg-white/5 text-white/20 opacity-50'}
@@ -255,7 +257,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
               <span className="truncate">
                 {progress.revives > 0
                   ? `USE REVIVE (${progress.revives})`
-                  : (isLoading ? 'PURCHASING...' : 'BUY REVIVE')
+                  : (isLoading ? 'PURCHASING...' : 'BUY REVIVE (0.0025 SOL)')
                 }
               </span>
               {!progress.revives && !isLoading && <Wallet className="w-4 h-4 shrink-0 opacity-70" />}
@@ -265,7 +267,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
           <div className="flex gap-2">
             <button
               onClick={onRestart}
-              className="flex-1 h-12 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold text-foreground transition-all hover:scale-[1.02] active:scale-95"
+              className="flex-1 h-11 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold text-foreground transition-all hover:scale-[1.02] active:scale-95"
               style={{
                 background: 'linear-gradient(135deg, hsl(var(--neon-pink)), hsl(330,100%,55%))',
                 boxShadow: '0 0 25px hsla(330,100%,65%,0.4)',
@@ -277,7 +279,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
 
             <button
               onClick={onMenu}
-              className="flex-1 h-12 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold text-muted-foreground transition-all hover:text-foreground glass-panel shadow-lg"
+              className="flex-1 h-11 flex items-center justify-center gap-2 px-4 rounded-xl text-sm font-bold text-muted-foreground transition-all hover:text-foreground glass-panel shadow-lg"
             >
               <Home className="w-5 h-5 shrink-0" />
               <span>Menu</span>

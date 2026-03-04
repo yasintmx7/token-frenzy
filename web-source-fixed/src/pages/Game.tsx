@@ -192,9 +192,9 @@ const Game = () => {
             p.revives = (p.revives || 0) + pending.qty;
           } else if (pending.type === 'bundle') {
             p.hasPremiumAccess = true;
-            BOARD_THEMES.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedBoards.includes(t.id)) p.ownedBoards.push(t.id); });
-            TOKEN_FRAMES.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedFrames.includes(t.id)) p.ownedFrames.push(t.id); });
-            BLADE_SKINS.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedBlades.includes(t.id)) p.ownedBlades.push(t.id); });
+            BOARD_THEMES.filter((t: any) => t.tier === 'sol' || t.tier === 'pass').forEach((t: any) => { if (!p.ownedBoards.includes(t.id)) p.ownedBoards.push(t.id); });
+            TOKEN_FRAMES.filter((t: any) => t.tier === 'sol' || t.tier === 'pass').forEach((t: any) => { if (!p.ownedFrames.includes(t.id)) p.ownedFrames.push(t.id); });
+            BLADE_SKINS.filter((t: any) => t.tier === 'sol' || t.tier === 'pass').forEach((t: any) => { if (!p.ownedBlades.includes(t.id)) p.ownedBlades.push(t.id); });
           } else if (pending.itemId) {
             if (pending.type === 'board' && !p.ownedBoards.includes(pending.itemId)) { p.ownedBoards.push(pending.itemId); p.selectedBoard = pending.itemId; }
             else if (pending.type === 'frame' && !p.ownedFrames.includes(pending.itemId)) { p.ownedFrames.push(pending.itemId); p.selectedFrame = pending.itemId; }

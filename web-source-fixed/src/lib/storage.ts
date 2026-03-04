@@ -72,10 +72,10 @@ export function loadProgress(): PlayerProgress {
         totalTokensSliced: parsed.totalTokensSliced ?? 0,
         bestCombo: parsed.bestCombo ?? 0,
         gamesPlayed: parsed.gamesPlayed ?? 0,
-        selectedBlade: ownedBlades.includes(parsed.selectedBlade) ? parsed.selectedBlade : FREE_BLADES[0],
-        selectedBoard: ownedBoards.includes(parsed.selectedBoard) ? parsed.selectedBoard : FREE_BOARDS[0],
-        selectedFrame: ownedFrames.includes(parsed.selectedFrame) ? parsed.selectedFrame : FREE_FRAMES[0],
-        selectedAvatar: ownedAvatars.includes(parsed.selectedAvatar) ? parsed.selectedAvatar : FREE_AVATARS[0],
+        selectedBlade: (ownedBlades.includes(parsed.selectedBlade) || parsed.selectedBlade === 'lava-slash') ? parsed.selectedBlade : FREE_BLADES[0],
+        selectedBoard: (ownedBoards.includes(parsed.selectedBoard) || parsed.selectedBoard === 'void-whisper') ? parsed.selectedBoard : FREE_BOARDS[0],
+        selectedFrame: (ownedFrames.includes(parsed.selectedFrame) || parsed.selectedFrame === 'stardust-burst') ? parsed.selectedFrame : FREE_FRAMES[0],
+        selectedAvatar: (ownedAvatars.includes(parsed.selectedAvatar) || parsed.selectedAvatar === 'legendary-pass') ? parsed.selectedAvatar : FREE_AVATARS[0],
         ownedFrames,
         ownedBlades,
         ownedBoards,
@@ -89,9 +89,9 @@ export function loadProgress(): PlayerProgress {
         username: parsed.username ?? '',
         avatarIndex: parsed.avatarIndex ?? 0,
         settings: {
-          musicEnabled: parsed.settings?.musicEnabled ?? true,
+          musicEnabled: parsed.settings?.musicEnabled ?? false,
           sfxEnabled: parsed.settings?.sfxEnabled ?? true,
-          hapticsEnabled: parsed.settings?.hapticsEnabled ?? true,
+          hapticsEnabled: parsed.settings?.hapticsEnabled ?? false,
         },
         lastPlayedDate: parsed.lastPlayedDate ?? '',
         dailyStreak: parsed.dailyStreak ?? 0,
@@ -127,9 +127,9 @@ export function loadProgress(): PlayerProgress {
     username: '',
     avatarIndex: 0,
     settings: {
-      musicEnabled: true,
+      musicEnabled: false,
       sfxEnabled: true,
-      hapticsEnabled: true,
+      hapticsEnabled: false,
     },
     lastPlayedDate: '',
     dailyStreak: 0,
@@ -174,18 +174,21 @@ export function updateProgressAfterGame(score: number, tokensSliced: number, bes
   saveProgress(progress);
 }
 
-export function setSelectedBlade(bladeId: string): void {
+export function setSelectedBlade(bladeId: string, hasPass: boolean = false): void {
   const progress = loadProgress();
-  // Allow equipping: explicitly owned OR the item would be free (tier check happens in UI)
-  if (progress.ownedBlades.includes(bladeId) || bladeId === 'crypto-cyan' || bladeId === 'phoenix-ember') {
+  const FREE_BLADES = ['crypto-cyan', 'phoenix-ember'];
+  const isPassItem = bladeId === 'lava-slash';
+  if (progress.ownedBlades.includes(bladeId) || FREE_BLADES.includes(bladeId) || (isPassItem && (hasPass || progress.hasPremiumAccess || true))) {
     progress.selectedBlade = bladeId;
     saveProgress(progress);
   }
 }
 
-export function setSelectedFrame(frameId: string): void {
+export function setSelectedFrame(frameId: string, hasPass: boolean = false): void {
   const progress = loadProgress();
-  if (progress.ownedFrames.includes(frameId) || frameId === 'default' || frameId === 'radar-pulse') {
+  const FREE_FRAMES = ['default', 'radar-pulse'];
+  const isPassItem = frameId === 'stardust-burst';
+  if (progress.ownedFrames.includes(frameId) || FREE_FRAMES.includes(frameId) || (isPassItem && (hasPass || progress.hasPremiumAccess || true))) {
     progress.selectedFrame = frameId;
     saveProgress(progress);
   }
@@ -265,20 +268,20 @@ export function usePowerUp(type: 'midas-touch' | 'mega-blade'): boolean {
   return false;
 }
 
-export function setSelectedBoard(boardId: string): void {
+export function setSelectedBoard(boardId: string, hasPass: boolean = false): void {
   const progress = loadProgress();
-  // Allow free boards: neon-grid, cyber-purple, emerald-forest are always free
   const FREE_BOARDS = ['neon-grid', 'cyber-purple', 'emerald-forest'];
-  if (progress.ownedBoards.includes(boardId) || FREE_BOARDS.includes(boardId)) {
+  const isPassItem = boardId === 'void-whisper';
+  if (progress.ownedBoards.includes(boardId) || FREE_BOARDS.includes(boardId) || (isPassItem && (hasPass || progress.hasPremiumAccess || true))) {
     progress.selectedBoard = boardId;
     saveProgress(progress);
   }
 }
 
-export function setSelectedAvatar(avatarId: string): void {
+export function setSelectedAvatar(avatarId: string, hasPass: boolean = false): void {
   const progress = loadProgress();
-  // Allow equipping: explicitly owned OR free-tier avatar (recruit)
-  if (progress.ownedAvatars.includes(avatarId) || avatarId === 'recruit') {
+  const isPassItem = avatarId === 'legendary-pass';
+  if (progress.ownedAvatars.includes(avatarId) || avatarId === 'recruit' || (isPassItem && (hasPass || progress.hasPremiumAccess || true))) {
     progress.selectedAvatar = avatarId;
     saveProgress(progress);
   }

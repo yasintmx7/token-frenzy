@@ -22,7 +22,7 @@ import { BOARD_THEMES } from '@/lib/boardThemes';
 import { BLADE_SKINS, type BladeSkin } from '@/lib/bladeSkins';
 import { TOKEN_FRAMES, type TokenFrame } from '@/lib/tokenFrames';
 import { AVATARS, getAvatarById } from '@/lib/avatars';
-import { setSFXEnabled, setMusicEnabled, updateMusic, resumeAudio, playSlice } from '@/lib/soundEngine';
+import { setSFXEnabled, setMusicEnabled, updateMusic, resumeAudio, prewarmAudio, playSlice } from '@/lib/soundEngine';
 import BoardSkinSelector from './BoardSkinSelector';
 import { Leaderboard } from './Leaderboard';
 import { LegalModal } from './LegalModals';
@@ -391,8 +391,8 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
   return (
     <div
       className="h-full flex flex-col relative overflow-hidden bg-background"
-      onClick={() => resumeAudio()}
-      onTouchStart={() => resumeAudio()}
+      onClick={() => { prewarmAudio(); resumeAudio(); }}
+      onTouchStart={() => { prewarmAudio(); resumeAudio(); }}
     >
       <div className="absolute inset-0 bg-cover bg-center bg-no-repeat" style={{ backgroundImage: `url(${heroBg})` }} />
       <div className={`absolute inset-0 transition-all duration-700 ${activeTab === 'shop' ? 'bg-black/80' : 'bg-black/55'}`} />
@@ -907,9 +907,11 @@ function BundleBanner({ onRefresh }: { onRefresh: () => void }) {
   );
 }
 
-function ShopManager({ hasPass, onRefresh, walletAddress }: { hasPass: boolean | null, onRefresh: () => void, walletAddress?: string }) {
+function ShopManager({ hasPass: hasPassRaw, onRefresh, walletAddress }: { hasPass: boolean | null, onRefresh: () => void, walletAddress?: string }) {
   const [subTab, setSubTab] = useState<'arena' | 'frames' | 'trails' | 'upgrades' | 'avatars'>('arena');
   const [progress, setProgress] = useState(loadProgress());
+  // Coerce null → false so ownership checks work correctly before wallet check completes
+  const hasPass = !!hasPassRaw || progress.hasPremiumAccess;
   const refresh = () => {
     setProgress(loadProgress());
     onRefresh();
@@ -958,14 +960,14 @@ function ShopManager({ hasPass, onRefresh, walletAddress }: { hasPass: boolean |
             <div className="grid grid-cols-2 gap-3">
               {BOARD_THEMES.map((theme) => {
                 const isPassPerk = theme.id === 'void-whisper';
-                const isOwned = theme.tier === 'free' || progress.ownedBoards.includes(theme.id) || (hasPass && isPassPerk);
+                const isOwned = theme.tier === 'free' || progress.ownedBoards.includes(theme.id) || (theme.tier === 'pass' && hasPass);
                 const isSelected = theme.id === progress.selectedBoard;
                 return (
                   <ShopItem key={theme.id} title={theme.name} subtitle={theme.description}
                     image={theme.preview} emoji={theme.emoji} selected={isSelected} owned={isOwned}
                     tier={theme.tier} cost={theme.cost} solPrice={theme.solPrice} isPassPerk={isPassPerk}
                     onAction={() => {
-                      if (isOwned) { setSelectedBoard(theme.id); refresh(); }
+                      if (isOwned) { setSelectedBoard(theme.id, hasPass); refresh(); }
                       else if (theme.tier === 'sol' && theme.solPrice) buySolItem(theme.solPrice, 'board', theme.id, refresh);
                       else handleBuyBoard(theme.id, theme.cost);
                     }}
@@ -983,13 +985,13 @@ function ShopManager({ hasPass, onRefresh, walletAddress }: { hasPass: boolean |
             <div className="grid grid-cols-2 gap-3">
               {TOKEN_FRAMES.map(f => {
                 const isPassPerk = f.id === 'stardust-burst';
-                const isOwned = f.tier === 'free' || progress.ownedFrames.includes(f.id) || (hasPass && isPassPerk);
+                const isOwned = f.tier === 'free' || progress.ownedFrames.includes(f.id) || (f.tier === 'pass' && hasPass);
                 const isSelected = progress.selectedFrame === f.id;
                 return (
                   <ShopItem key={f.id} title={f.name} subtitle={f.description}
                     selected={isSelected} owned={isOwned} tier={f.tier} cost={f.cost} solPrice={f.solPrice} frame={f} isPassPerk={isPassPerk}
                     onAction={() => {
-                      if (isOwned) { setSelectedFrame(f.id); refresh(); }
+                      if (isOwned) { setSelectedFrame(f.id, hasPass); refresh(); }
                       else if (f.tier === 'sol' && f.solPrice) buySolItem(f.solPrice, 'frame', f.id, refresh);
                       else handleBuyFrame(f.id, f.cost);
                     }}
@@ -1007,13 +1009,13 @@ function ShopManager({ hasPass, onRefresh, walletAddress }: { hasPass: boolean |
             <div className="grid grid-cols-2 gap-3">
               {BLADE_SKINS.map(b => {
                 const isPassPerk = b.id === 'lava-slash';
-                const isOwned = b.tier === 'free' || progress.ownedBlades.includes(b.id) || (hasPass && isPassPerk);
+                const isOwned = b.tier === 'free' || progress.ownedBlades.includes(b.id) || (b.tier === 'pass' && hasPass);
                 const isSelected = progress.selectedBlade === b.id;
                 return (
                   <ShopItem key={b.id} title={b.name} subtitle={b.description}
                     emoji={b.emoji} selected={isSelected} owned={isOwned} tier={b.tier} cost={b.cost} solPrice={b.solPrice} trail={b} isPassPerk={isPassPerk}
                     onAction={() => {
-                      if (isOwned) { setSelectedBlade(b.id); refresh(); }
+                      if (isOwned) { setSelectedBlade(b.id, hasPass); refresh(); }
                       else if (b.tier === 'sol' && b.solPrice) buySolItem(b.solPrice, 'blade', b.id, refresh);
                       else handleBuyBlade(b.id, b.cost);
                     }}
@@ -1031,13 +1033,13 @@ function ShopManager({ hasPass, onRefresh, walletAddress }: { hasPass: boolean |
             <div className="grid grid-cols-2 gap-3">
               {AVATARS.map(a => {
                 const isPassPerk = a.id === 'legendary-pass';
-                const isOwned = a.tier === 'free' || progress.ownedAvatars.includes(a.id) || (hasPass && isPassPerk);
+                const isOwned = a.tier === 'free' || progress.ownedAvatars.includes(a.id) || (a.tier === 'pass' && hasPass);
                 const isSelected = progress.selectedAvatar === a.id;
                 return (
                   <ShopItem key={a.id} title={a.name} subtitle={a.description}
                     selected={isSelected} owned={isOwned} tier={a.tier} cost={a.cost} solPrice={a.solPrice} avatar={a} isPassPerk={isPassPerk}
                     onAction={() => {
-                      if (isOwned) { setSelectedAvatar(a.id); refresh(); }
+                      if (isOwned) { setSelectedAvatar(a.id, hasPass); refresh(); }
                       else if (a.tier === 'sol' && a.solPrice) buySolItem(a.solPrice, 'avatar', a.id, refresh);
                       else handleBuyAvatar(a.id, a.cost);
                     }}
@@ -1164,7 +1166,7 @@ function ShopItem({
   frame?: TokenFrame;
   trail?: BladeSkin;
   avatar?: any;
-  tier?: 'free' | 'coins' | 'sol';
+  tier?: 'free' | 'coins' | 'sol' | 'pass';
   solPrice?: number;
   isPassPerk?: boolean;
 }) {
@@ -1210,10 +1212,11 @@ function ShopItem({
         <div className="flex flex-col gap-1">
           {tier && (
             <div className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-widest w-fit border
-              ${tier === 'sol' ? 'bg-yellow-400/10 text-yellow-400 border-yellow-400/30' :
-                tier === 'coins' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
-                  'bg-emerald-400/10 text-emerald-400 border-emerald-400/30'}`}>
-              {tier} TIER
+              ${tier === 'pass' ? 'bg-amber-400/10 text-amber-400 border-amber-400/30' :
+                tier === 'sol' ? 'bg-yellow-400/10 text-yellow-400 border-yellow-400/30' :
+                  tier === 'coins' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                    'bg-emerald-400/10 text-emerald-400 border-emerald-400/30'}`}>
+              {tier === 'pass' ? '🎫 PASS' : tier + ' TIER'}
             </div>
           )}
           <h4 className="text-[10px] font-display font-black text-white tracking-widest uppercase truncate drop-shadow-md">{title}</h4>

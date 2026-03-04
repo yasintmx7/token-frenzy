@@ -12,7 +12,7 @@ export interface BladeSkin {
   particles: string[];
   style?: 'default' | 'crescent' | 'lightning' | 'laser';
   // Monetisation
-  tier: 'free' | 'coins' | 'sol';
+  tier: 'free' | 'coins' | 'sol' | 'pass';
   solPrice?: number;
 }
 
@@ -94,8 +94,7 @@ export const BLADE_SKINS: BladeSkin[] = [
     },
     particles: ['#FF4400', '#221100', '#552200'],
     style: 'crescent',
-    tier: 'sol',
-    solPrice: 0.005,
+    tier: 'pass',
   },
   {
     id: 'shadow-edge',

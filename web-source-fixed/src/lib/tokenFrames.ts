@@ -8,7 +8,7 @@ export interface TokenFrame {
     ringWidth: number;
     description: string;
     // Monetisation
-    tier: 'free' | 'coins' | 'sol';
+    tier: 'free' | 'coins' | 'sol' | 'pass';
     solPrice?: number;
 }
 
@@ -70,8 +70,7 @@ export const TOKEN_FRAMES: TokenFrame[] = [
         auraOpacity: 0.8,
         ringWidth: 0,
         description: 'Explosive energy trail',
-        tier: 'sol',
-        solPrice: 0.012,
+        tier: 'pass',
     },
     {
         id: 'void-vortex',

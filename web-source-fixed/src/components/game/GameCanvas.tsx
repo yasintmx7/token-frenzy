@@ -106,14 +106,19 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false, 
   const [paused, setPaused] = useState(false);
   const swipeVelocityRef = useRef(0);
 
+  const lastHapticRef = useRef(0);
   // Haptic support (Moved to component level for access by PowerUpHud)
   const triggerHaptic = (type: 'light' | 'medium' | 'heavy' = 'light') => {
     if (!settings?.hapticsEnabled) return;
+    const now = Date.now();
+    if (now - lastHapticRef.current < 50) return; // 50ms debounce to prevent lag
+    lastHapticRef.current = now;
+
     try {
       if (window.Android && (window.Android as any).vibrate) {
-        (window.Android as any).vibrate(type === 'heavy' ? 50 : type === 'medium' ? 30 : 15);
+        (window.Android as any).vibrate(type === 'heavy' ? 20 : type === 'medium' ? 15 : 5);
       } else if (navigator.vibrate) {
-        navigator.vibrate(type === 'heavy' ? 50 : type === 'medium' ? 30 : 15);
+        navigator.vibrate(type === 'heavy' ? 20 : type === 'medium' ? 15 : 5);
       }
     } catch (e) { /* ignore */ }
   };

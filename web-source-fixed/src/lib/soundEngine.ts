@@ -4,7 +4,7 @@
 let audioCtx: AudioContext | null = null;
 let _muted = false;
 let _sfxEnabled = true;
-let _musicEnabled = true;
+let _musicEnabled = false;
 let _calmMode = false;
 let _volume = 0.5;
 
@@ -19,7 +19,7 @@ function loadSoundPrefs() {
       const parsed = JSON.parse(data);
       _muted = parsed.muted ?? false;
       _sfxEnabled = parsed.sfxEnabled ?? true;
-      _musicEnabled = parsed.musicEnabled ?? true;
+      _musicEnabled = parsed.musicEnabled ?? false;
       _calmMode = parsed.calmMode ?? false;
       _volume = parsed.volume ?? 0.5;
     }
@@ -58,6 +58,28 @@ export function resumeAudio(): void {
       updateMusic();
     });
   }
+}
+
+// Pre-initializes the AudioContext silently so the first in-game sound plays
+// instantly with no stutter. Call this from the Main Menu on first user interaction.
+export function prewarmAudio(): void {
+  try {
+    const ctx = getCtx();
+    if (!ctx) return;
+    // Resume if suspended (required by browser autoplay policy)
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+    // Play a completely silent buffer to "unlock" the audio engine
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = 0; // completely silent
+    source.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    source.start(0);
+  } catch { /* ignore */ }
 }
 
 function createGain(ctx: AudioContext, volume: number): GainNode {

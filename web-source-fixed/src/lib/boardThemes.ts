@@ -31,7 +31,7 @@ export interface BoardTheme {
   preview: string;
   cost: number;
   // Monetisation
-  tier: 'free' | 'coins' | 'sol';
+  tier: 'free' | 'coins' | 'sol' | 'pass';
   solPrice?: number; // SOL amount (e.g. 0.006)
 }
 
@@ -134,8 +134,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     starsOpacity: 0.1,
     preview: voidWhisperBg,
     cost: 0,
-    tier: 'sol',
-    solPrice: 0.006,
+    tier: 'pass',
   },
   {
     id: 'carbon-weave',

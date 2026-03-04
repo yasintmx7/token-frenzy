@@ -3,7 +3,7 @@ export interface Avatar {
   name: string;
   description: string;
   svg: string;
-  tier: 'free' | 'coins' | 'sol';
+  tier: 'free' | 'coins' | 'sol' | 'pass';
   cost: number;
   solPrice?: number;
 }
@@ -170,7 +170,7 @@ export const AVATARS: Avatar[] = [
     id: 'legendary-pass',
     name: 'Legendary Monarch',
     description: 'The ultimate symbol of prestige.',
-    tier: 'sol',
+    tier: 'pass',
     cost: 0,
     svg: `
       <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
