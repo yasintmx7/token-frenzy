@@ -1,13 +1,23 @@
-import neonGridBg from '@/assets/skins/neon-grid.png';
-import cyberPurpleBg from '@/assets/skins/cyber-purple.png';
-import goldMarbleBg from '@/assets/skins/gold-marble.png';
-import darkCarbonBg from '@/assets/skins/dark-carbon.png';
-import iceBlueBg from '@/assets/skins/ice-blue.png';
-import lavaRedBg from '@/assets/skins/lava-red.png';
-import emeraldForestBg from '@/assets/skins/emerald-forest.png';
-import holoChromeBg from '@/assets/skins/holo-chrome.png';
-import crimsonVoidBg from '@/assets/skins/crimson-void.png';
-import sapphireSeaBg from '@/assets/skins/sapphire-sea.png';
+import neonGridBg from '@/assets/skins/neon-grid.webp';
+import cyberPurpleBg from '@/assets/skins/cyber-purple.webp';
+import emeraldForestBg from '@/assets/skins/emerald-forest.webp';
+import holoChromeBg from '@/assets/skins/holo-chrome.webp';
+import crimsonVoidBg from '@/assets/skins/crimson-void.webp';
+import sapphireSeaBg from '@/assets/skins/sapphire-sea.webp';
+import voidWhisperBg from '@/assets/skins/void-whisper.webp';
+import nebulaMistBg from '@/assets/skins/nebula-mist.webp';
+import carbonWeaveBg from '@/assets/skins/carbon-weave.webp';
+import biolumeDeepBg from '@/assets/skins/biolume-deep.webp';
+import marbleRoyalBg from '@/assets/skins/marble-royal.webp';
+import mercuryFlowBg from '@/assets/skins/mercury-flow.webp';
+import shadowCanyonBg from '@/assets/skins/shadow-canyon.webp';
+import cyanShardsBg from '@/assets/skins/cyan-shards.webp';
+import amberForgeBg from '@/assets/skins/amber-forge.webp';
+import scarletWhisperBg from '@/assets/skins/scarlet-whisper.webp';
+import rubyRiftBg from '@/assets/skins/ruby-rift.webp';
+import shadowHandsBg from '@/assets/skins/shadow-hands.webp';
+import cyberReaperBg from '@/assets/skins/cyber-reaper.webp';
+import voidGazeBg from '@/assets/skins/void-gaze.webp';
 
 export interface BoardTheme {
   id: string;
@@ -15,9 +25,11 @@ export interface BoardTheme {
   emoji: string;
   description: string;
   background: string;
-  backgroundImage: string;
+  backgroundImage?: string;
+  cssBackground?: string;
   starsOpacity: number;
   preview: string;
+  cost: number;
 }
 
 export const BOARD_THEMES: BoardTheme[] = [
@@ -30,6 +42,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: neonGridBg,
     starsOpacity: 0.2,
     preview: neonGridBg,
+    cost: 0,
   },
   {
     id: 'cyber-purple',
@@ -40,46 +53,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: cyberPurpleBg,
     starsOpacity: 0.3,
     preview: cyberPurpleBg,
-  },
-  {
-    id: 'gold-marble',
-    name: 'Eternal Amber',
-    emoji: '✨',
-    description: 'Rich metallic warmth and luxury.',
-    background: '#241a08',
-    backgroundImage: goldMarbleBg,
-    starsOpacity: 0.1,
-    preview: goldMarbleBg,
-  },
-  {
-    id: 'dark-carbon',
-    name: 'Carbon Stealth',
-    emoji: '⬛',
-    description: 'Ultra-modern tactical matte finish.',
-    background: '#0f172a',
-    backgroundImage: darkCarbonBg,
-    starsOpacity: 0,
-    preview: darkCarbonBg,
-  },
-  {
-    id: 'ice-blue-glow',
-    name: 'Arctic Sage',
-    emoji: '❄️',
-    description: 'Cool, crisp professional finish.',
-    background: '#061a1a',
-    backgroundImage: iceBlueBg,
-    starsOpacity: 0,
-    preview: iceBlueBg,
-  },
-  {
-    id: 'lava-red',
-    name: 'Solar Flare',
-    emoji: '💥',
-    description: 'High-energy cinematic depth.',
-    background: '#1c0805',
-    backgroundImage: lavaRedBg,
-    starsOpacity: 0.2,
-    preview: lavaRedBg,
+    cost: 5000,
   },
   {
     id: 'emerald-forest',
@@ -90,6 +64,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: emeraldForestBg,
     starsOpacity: 0.1,
     preview: emeraldForestBg,
+    cost: 15000,
   },
   {
     id: 'holo-chrome',
@@ -100,6 +75,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: holoChromeBg,
     starsOpacity: 0,
     preview: holoChromeBg,
+    cost: 18000,
   },
   {
     id: 'crimson-void',
@@ -110,6 +86,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: crimsonVoidBg,
     starsOpacity: 0.1,
     preview: crimsonVoidBg,
+    cost: 20000,
   },
   {
     id: 'sapphire-sea',
@@ -120,6 +97,161 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: sapphireSeaBg,
     starsOpacity: 0.2,
     preview: sapphireSeaBg,
+    cost: 22000,
+  },
+  {
+    id: 'void-whisper',
+    name: 'Void Whisper',
+    emoji: '⬛',
+    description: 'Dark smoke with white cosmic cracks.',
+    background: '#000000',
+    backgroundImage: voidWhisperBg,
+    starsOpacity: 0.1,
+    preview: voidWhisperBg,
+    cost: 25000,
+  },
+  {
+    id: 'nebula-mist',
+    name: 'Dream Nebula',
+    emoji: '☁️',
+    description: 'Ethereal pink and purple star gas.',
+    background: '#1a0b2e',
+    backgroundImage: nebulaMistBg,
+    starsOpacity: 0.5,
+    preview: nebulaMistBg,
+    cost: 28000,
+  },
+  {
+    id: 'carbon-weave',
+    name: 'Carbon Apex',
+    emoji: '🛡️',
+    description: 'Precision tactical carbon fiber weave.',
+    background: '#0a0a0c',
+    backgroundImage: carbonWeaveBg,
+    starsOpacity: 0,
+    preview: carbonWeaveBg,
+    cost: 30000,
+  },
+  {
+    id: 'biolume-deep',
+    name: 'Biolume Abyss',
+    emoji: '🦑',
+    description: 'Deep sea bioluminescence and aura.',
+    background: '#030d24',
+    backgroundImage: biolumeDeepBg,
+    starsOpacity: 0.1,
+    preview: biolumeDeepBg,
+    cost: 32000,
+  },
+  {
+    id: 'marble-royal',
+    name: 'Imperial Stone',
+    emoji: '🏛️',
+    description: 'Royal purple marble with gold veins.',
+    background: '#141417',
+    backgroundImage: marbleRoyalBg,
+    starsOpacity: 0.1,
+    preview: marbleRoyalBg,
+    cost: 35000,
+  },
+  {
+    id: 'mercury-flow',
+    name: 'QuickSilver',
+    emoji: '🧪',
+    description: 'Liquid silver mercury mirror flow.',
+    background: '#141417',
+    backgroundImage: mercuryFlowBg,
+    starsOpacity: 0,
+    preview: mercuryFlowBg,
+    cost: 38000,
+  },
+  {
+    id: 'shadow-canyon',
+    name: 'Shadow Canyon',
+    emoji: '🏔️',
+    description: 'Cinematic dark fantasy landscape from another realm.',
+    background: '#0a0a0c',
+    backgroundImage: shadowCanyonBg,
+    starsOpacity: 0.2,
+    preview: shadowCanyonBg,
+    cost: 45000,
+  },
+  {
+    id: 'cyan-shards',
+    name: 'Cyan Cyberspace',
+    emoji: '💎',
+    description: 'Futuristic neon-lit geometric shards in deep blue.',
+    background: '#010816',
+    backgroundImage: cyanShardsBg,
+    starsOpacity: 0.1,
+    preview: cyanShardsBg,
+    cost: 50000,
+  },
+  {
+    id: 'amber-forge',
+    name: 'Amber Forge',
+    emoji: '🔥',
+    description: 'Jagged obsidian with molten gold light from the core.',
+    background: '#120a02',
+    backgroundImage: amberForgeBg,
+    starsOpacity: 0.1,
+    preview: amberForgeBg,
+    cost: 55000,
+  },
+  {
+    id: 'scarlet-whisper',
+    name: 'Scarlet Whisper',
+    emoji: '📜',
+    description: 'Mystic dark textures with elegant crimson calligraphy.',
+    background: '#150202',
+    backgroundImage: scarletWhisperBg,
+    starsOpacity: 0.2,
+    preview: scarletWhisperBg,
+    cost: 60000,
+  },
+  {
+    id: 'ruby-rift',
+    name: 'Ruby Rift',
+    emoji: '🌋',
+    description: 'Futuristic canyon with glowing red crystalline walls.',
+    background: '#200101',
+    backgroundImage: rubyRiftBg,
+    starsOpacity: 0.3,
+    preview: rubyRiftBg,
+    cost: 75000,
+  },
+  {
+    id: 'shadow-hands',
+    name: 'Shadow Hands',
+    emoji: '🙌',
+    description: 'Eerie shadows reaching through a textured stone wall.',
+    background: '#1a1a1a',
+    backgroundImage: shadowHandsBg,
+    starsOpacity: 0.1,
+    preview: shadowHandsBg,
+    cost: 85000,
+  },
+  {
+    id: 'cyber-reaper',
+    name: 'Cyber Reaper',
+    emoji: '⚔️',
+    description: 'Dark glitch aesthetic with a neon pink scythe warrior.',
+    background: '#0a0005',
+    backgroundImage: cyberReaperBg,
+    starsOpacity: 0.4,
+    preview: cyberReaperBg,
+    cost: 100000,
+  },
+  {
+    id: 'void-gaze',
+    name: 'Void Gaze',
+    emoji: '👁️',
+    description: 'Countless eyes watching from the deep purple abyss.',
+    background: '#0d001a',
+    backgroundImage: voidGazeBg,
+    starsOpacity: 0.2,
+    preview: voidGazeBg,
+    cost: 120000,
   },
 ];
 

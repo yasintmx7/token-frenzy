@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   type GameState, type GameMode, type FlyingToken, type SlicedHalf, type Particle, type SlicePoint,
-  createGameState, updateGameState, checkSlice, SINGULARITY_RADIUS,
+  createGameState, updateGameState, checkSlice, SINGULARITY_RADIUS, activatePowerUp
 } from '@/lib/gameEngine';
 import { TOKENS } from '@/lib/tokens';
 import { getSkinById, type BladeSkin } from '@/lib/bladeSkins';
 import { getThemeById, type BoardTheme } from '@/lib/boardThemes';
-import { loadProgress } from '@/lib/storage';
+import { loadProgress, usePowerUp } from '@/lib/storage';
 import { playSlice, playCombo, playBomb, playGameOver, playZenCollapse, isMuted, toggleMute } from '@/lib/soundEngine';
-import { Volume2, VolumeX, Pause, Play, Home, RotateCcw } from 'lucide-react';
+import { Volume2, VolumeX, Pause, Play, Home, RotateCcw, Sparkles, Sword } from 'lucide-react';
 
 // ===== IMAGE CACHE =====
 const imageCache = new Map<string, HTMLImageElement | null>();
@@ -46,6 +46,8 @@ interface GameCanvasProps {
   onRestart: () => void;
   onExit: () => void;
   forcePaused?: boolean;
+  initialStats?: { score: number; tokensSliced: number; bestCombo: number };
+  settings: any;
 }
 
 interface HudState {
@@ -56,10 +58,23 @@ interface HudState {
   timeLeft?: number;
 }
 
-const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }: GameCanvasProps) => {
+const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false, initialStats, settings }: GameCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef<GameState>(createGameState(mode));
+
+  // Initialize state with potential initialStats for Revive logic
+  const initialState = useMemo(() => {
+    const s = createGameState(mode);
+    if (initialStats) {
+      s.score = initialStats.score;
+      s.tokensSliced = initialStats.tokensSliced;
+      s.bestCombo = initialStats.bestCombo;
+      s.lives = 1; // Give 1 life on revive
+    }
+    return s;
+  }, [mode, initialStats]);
+
+  const stateRef = useRef<GameState>(initialState);
   const isSwipingRef = useRef(false);
   const lastTimeRef = useRef(0);
   const sizeRef = useRef({ width: 0, height: 0 });
@@ -74,6 +89,7 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
   const comboValueRef = useRef<HTMLDivElement>(null);
   const comboPulseRef = useRef<HTMLDivElement>(null);
   const fpsRef = useRef<HTMLDivElement>(null);
+  const bgAccentRef = useRef<HTMLDivElement>(null);
   const longPressTimer = useRef<any>(null); // For Singularity activation
 
   const perfData = useRef({ lastTime: 0, drops: 0, frameCount: 0, fps: 60, isLagging: false });
@@ -82,6 +98,20 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
   const [showPerf, setShowPerf] = useState(false);
   const [muted, setMuted] = useState(isMuted());
   const [paused, setPaused] = useState(false);
+  const swipeVelocityRef = useRef(0);
+
+  // Haptic support (Moved to component level for access by PowerUpHud)
+  const triggerHaptic = (type: 'light' | 'medium' | 'heavy' = 'light') => {
+    if (!settings?.hapticsEnabled) return;
+    try {
+      if (window.Android && (window.Android as any).vibrate) {
+        (window.Android as any).vibrate(type === 'heavy' ? 50 : type === 'medium' ? 30 : 15);
+      } else if (navigator.vibrate) {
+        navigator.vibrate(type === 'heavy' ? 50 : type === 'medium' ? 30 : 15);
+      }
+    } catch (e) { /* ignore */ }
+  };
+  const lastUpdateRef = useRef(Date.now());
 
   // Canvas setup
   const setupCanvas = useCallback(() => {
@@ -147,10 +177,11 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
 
     const handleMove = (clientX: number, clientY: number) => {
       if (!isSwipingRef.current) return;
+
       const { x, y } = getLocalCoords(clientX, clientY);
       const state = stateRef.current;
 
-      // Update singularity position if active
+      // Update singularity position if active (Zen Mode)
       if (state.mode === 'zen' && state.singularity.active) {
         state.singularity.x = x;
         state.singularity.y = y;
@@ -171,9 +202,18 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
           }
         }
 
+        // PROCESS SLICING IMMEDIATELY (Do not throttle for logic)
         checkSlice(state, last.x, last.y, x, y);
+
+        // Calculate velocity for timewarp mode
+        const dt_swipe = (Date.now() - last.time) / 1000;
+        if (dt_swipe > 0) {
+          const dist = Math.hypot(x - last.x, y - last.y);
+          swipeVelocityRef.current = dist / dt_swipe;
+        }
       }
       trail.push({ x, y, time: Date.now() });
+
       const now = Date.now();
       const trailLimit = state.mode === 'zen' ? 800 : 150;
       while (trail.length > 0 && now - trail[0].time > trailLimit) trail.shift();
@@ -292,9 +332,10 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
       // Update game & juice
       // Update juice (Enhanced Game Juice)
       const targetZoom = state.combo >= 10 ? 1.08 : state.combo >= 5 ? 1.04 : 1;
-      const targetTimeScale = state.combo >= 15 ? 0.6 : state.combo >= 10 ? 0.75 : state.combo >= 5 ? 0.9 : 1;
+      let targetTimeScale = state.combo >= 15 ? 0.6 : state.combo >= 10 ? 0.75 : state.combo >= 5 ? 0.9 : 1;
       const targetFlow = state.combo >= 5 ? 1 : 0;
 
+      // Removed 'timewarp' time scaling. Split mode runs at normal speed.
       juiceRef.current.zoom += (targetZoom - juiceRef.current.zoom) * (dt * 5);
       juiceRef.current.timeScale += (targetTimeScale - juiceRef.current.timeScale) * (dt * 5);
       juiceRef.current.flow += (targetFlow - juiceRef.current.flow) * (dt * 3);
@@ -305,24 +346,32 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
 
       // Render
       const zoom = juiceRef.current.zoom;
-      // Calculate center-point zoom transform
-      ctx.setTransform(
-        dpr * zoom, 0, 0, dpr * zoom,
-        (1 - zoom) * width * dpr / 2,
-        (1 - zoom) * height * dpr / 2
-      );
-      ctx.clearRect(0, 0, width, height);
 
-      // Apply Screen Shake to the root container
-      if (containerRef.current && state.shakeAmount > 0) {
-        const sx = (Math.random() - 0.5) * state.shakeAmount * 1.5;
-        const sy = (Math.random() - 0.5) * state.shakeAmount * 1.5;
-        containerRef.current.style.transform = `translate(${sx}px, ${sy}px)`;
-      } else if (containerRef.current) {
-        containerRef.current.style.transform = 'none';
+      // Fast clear before transform
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Apply zoom and DPI scaling in one go
+      ctx.scale(dpr * zoom, dpr * zoom);
+      ctx.translate(
+        (1 - zoom) * width / (2 * zoom),
+        (1 - zoom) * height / (2 * zoom)
+      );
+
+      // Apply Screen Shake to the root container (keeps the canvas itself clean)
+      if (containerRef.current) {
+        if (state.shakeAmount > 0) {
+          const sx = (Math.random() - 0.5) * state.shakeAmount * 1.5;
+          const sy = (Math.random() - 0.5) * state.shakeAmount * 1.5;
+          containerRef.current.style.transform = `translate(${sx}px, ${sy}px)`;
+        } else if (containerRef.current.style.transform !== 'none') {
+          containerRef.current.style.transform = 'none';
+        }
       }
 
       renderGame(ctx, state, bladeSkinRef.current);
+
+      // Reset transform so subsequent frames don't break
       ctx.setTransform(1, 0, 0, 1, 0, 0);
 
       // Zero UI Overhead: Direct DOM updates
@@ -385,13 +434,29 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
         }
       }
 
+      // Update Theme Background
+      if (bgAccentRef.current) {
+        bgAccentRef.current.style.background = `radial-gradient(circle at 50% 50%, ${boardThemeRef.current.background}55 0%, transparent 70%)`;
+      }
+
       // Drain sound queue
       for (const event of state.soundQueue) {
         switch (event.type) {
-          case 'slice': playSlice(); break;
-          case 'combo': playCombo(event.combo); break;
-          case 'bomb': playBomb(); break;
-          case 'gameOver': playGameOver(); break;
+          case 'slice':
+            playSlice();
+            triggerHaptic('light');
+            break;
+          case 'combo':
+            playCombo(event.combo);
+            triggerHaptic('medium');
+            break;
+          case 'bomb':
+            playBomb();
+            triggerHaptic('heavy');
+            break;
+          case 'gameOver':
+            playGameOver();
+            break;
         }
       }
       state.soundQueue.length = 0;
@@ -426,17 +491,19 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
       }}>
 
       {/* Background image / Skin Texture */}
-      <div className="absolute inset-0 z-0 select-none pointer-events-none transition-opacity duration-1000" style={{
-        backgroundImage: `url(${boardThemeRef.current.backgroundImage})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        opacity: 0.45,
-        mixBlendMode: 'screen', // Makes the texture blend naturally with the color
-      }} />
+      {boardThemeRef.current.backgroundImage && (
+        <div className="absolute inset-0 z-0 select-none pointer-events-none transition-opacity duration-1000" style={{
+          backgroundImage: `url(${boardThemeRef.current.backgroundImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: 0.45,
+          mixBlendMode: 'screen', // Makes the texture blend naturally with the color
+        }} />
+      )}
 
       {/* Premium Radial Accent - Uses the theme's core color to create a localized glow */}
-      <div className="absolute inset-0 z-0 pointer-events-none" style={{
-        background: `radial-gradient(circle at 50% 50%, ${boardThemeRef.current.background}44 0%, transparent 70%)`,
+      <div ref={bgAccentRef} className="absolute inset-0 z-0 pointer-events-none transition-colors duration-500" style={{
+        background: `radial-gradient(circle at 50% 50%, ${boardThemeRef.current.background}55 0%, transparent 70%)`,
       }} />
 
       {/* Texture Noise Overlay */}
@@ -492,6 +559,19 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
             SCORE
           </div>
         </div>
+
+        {/* POWER-UP HUD */}
+        <PowerUpHud
+          progress={loadProgress()}
+          onActivate={(type) => {
+            if (usePowerUp(type)) {
+              activatePowerUp(stateRef.current, type);
+              triggerHaptic('heavy');
+            }
+          }}
+          midasActive={stateRef.current.powerUps.midasTouch.active}
+          megaActive={stateRef.current.powerUps.megaBlade.active}
+        />
 
         {/* Central Timer for Zen Mode */}
         {mode === 'zen' && (
@@ -608,32 +688,39 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false }
 // ===== RENDERING =====
 
 function renderGame(ctx: CanvasRenderingContext2D, state: GameState, skin: BladeSkin): void {
-  drawBladeTrail(ctx, state.bladeTrail, skin);
 
-  if (state.mode === 'zen') {
-    drawSingularity(ctx, state.singularity);
-  }
+  // Draw board theme layer
+  // ...
+
+  drawSingularity(ctx, state.singularity);
+  if (state.mode === 'void' && state.blackHole) drawBlackHole(ctx, state.blackHole);
+  if (state.mode === 'laser' && state.lasers) drawLasers(ctx, state.lasers, state.elapsed);
+
+  drawParticles(ctx, state.particles);
 
   for (const token of state.tokens) {
-    if (token.sliced) continue;
-    if (token.isBomb) {
-      drawBomb(ctx, token);
-    } else {
-      drawToken(ctx, token);
-    }
+    if (token.sliced) continue; // Skip tokens that are already sliced
+    if (!token.isBomb) drawToken(ctx, token, state);
+    else drawBomb(ctx, token);
   }
 
   for (const half of state.slicedHalves) {
     drawSlicedHalf(ctx, half);
   }
 
-  drawParticles(ctx, state.particles);
+  drawBladeTrail(ctx, state.bladeTrail, skin, state);
 }
 
-function drawToken(ctx: CanvasRenderingContext2D, token: FlyingToken): void {
+function drawToken(ctx: CanvasRenderingContext2D, token: FlyingToken, state: GameState): void {
   ctx.save();
   ctx.translate(token.x, token.y);
   ctx.rotate(token.rotation);
+
+  // BRAIN GAME: NEW PHANTOM (void) Alpha
+  if (state.mode === 'void' && !token.isBomb) {
+    // Fades out completely as it loses vertical velocity. Invisible on the way down.
+    ctx.globalAlpha = Math.max(0, Math.min(1, (token.vy + 100) / -300));
+  }
 
   const r = token.radius;
   const color = token.tokenData.color;
@@ -641,14 +728,295 @@ function drawToken(ctx: CanvasRenderingContext2D, token: FlyingToken): void {
 
   if (img && img.complete && img.naturalWidth > 0) {
     // 1. Draw Glow/Aura BEFORE clipping
-    if (token.isGolden) {
+    const frame = state.selectedTokenFrame;
+    const time = Date.now() / 1000;
+
+    if (frame.id !== 'default') {
+      let glowColor = frame.glowColor;
+
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur = token.isGolden ? 35 : 20; // Extra juice for natural gold
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = `${frame.glowColor}${Math.floor(frame.auraOpacity * 255).toString(16).padStart(2, '0')}`;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Custom Glitch Artifacts for Glitch Nexus
+      if (frame.id === 'glitch-nexus') {
+        const glitchColors = ['#00ffff', '#ff00ff', '#ffff00', '#ffffff'];
+
+        // 1. Digital shards/blocks
+        for (let i = 0; i < 12; i++) {
+          const angle = (time * 2 + i * (Math.PI / 6)) % (Math.PI * 2);
+          const dist = r * (0.8 + Math.random() * 0.5);
+          const x = Math.cos(angle) * dist;
+          const y = Math.sin(angle) * dist;
+          const w = 4 + Math.random() * 8;
+          const h = 8 + Math.random() * 15;
+          ctx.fillStyle = glitchColors[Math.floor(Math.random() * glitchColors.length)];
+          ctx.globalAlpha = 0.6 + Math.sin(time * 10 + i) * 0.3;
+          ctx.fillRect(x - w / 2, y - h / 2, w, h);
+        }
+
+        // 2. Glitchy connections (User requested to keep this only for glitch frame)
+        // We find nearby tokens and draw jagged links
+        ctx.strokeStyle = '#00ffff';
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.4;
+        state.tokens.forEach(other => {
+          if (other === token || other.sliced) return;
+          const dist = Math.hypot(token.x - other.x, token.y - other.y);
+          if (dist < 300) {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            // Jagged line behavior
+            const dx = (other.x - token.x);
+            const dy = (other.y - token.y);
+            ctx.lineTo(dx * 0.3, dy * 0.3 + (Math.random() - 0.5) * 40);
+            ctx.lineTo(dx * 0.6, dy * 0.6 + (Math.random() - 0.5) * 40);
+            ctx.lineTo(dx, dy);
+            ctx.stroke();
+          }
+        });
+
+        ctx.globalAlpha = 1.0;
+      }
+
+      // 3. Energy Nova (Image 1 style)
+      if (frame.id === 'energy-nova') {
+        ctx.save();
+        ctx.shadowColor = '#00ffff';
+        ctx.shadowBlur = 25;
+        for (let i = 0; i < 15; i++) {
+          const a = (time * 3 + i * 2) % (Math.PI * 2);
+          const d = r * (0.9 + Math.sin(time * 5 + i) * 0.2);
+          const px = Math.cos(a) * d;
+          const py = Math.sin(a) * d;
+          ctx.beginPath();
+          ctx.fillStyle = i % 2 === 0 ? '#00ffff' : '#ffffff';
+          ctx.arc(px, py, Math.random() * 3 + 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // 4. Void Vortex (Image 2 style)
+      if (frame.id === 'void-vortex') {
+        ctx.save();
+        ctx.strokeStyle = '#7c3aed';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 6; i++) {
+          const startAngle = time * 2 + i * (Math.PI / 3);
+          ctx.beginPath();
+          // Spiral arc
+          for (let step = 0; step < 20; step++) {
+            const angle = startAngle + step * 0.1;
+            const dist = r * (1 + step * 0.05);
+            ctx.lineTo(Math.cos(angle) * dist, Math.sin(angle) * dist);
+          }
+          ctx.globalAlpha = 0.5 - (i * 0.05);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // 5. Plasma Saw (Image 3 style)
+      if (frame.id === 'plasma-saw') {
+        ctx.save();
+        ctx.rotate(time * 10);
+        ctx.fillStyle = '#ef4444';
+        ctx.shadowColor = '#ff0000';
+        ctx.shadowBlur = 20;
+        for (let i = 0; i < 6; i++) {
+          const angle = i * (Math.PI / 3);
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+          ctx.lineTo(Math.cos(angle + 0.2) * r * 1.4, Math.sin(angle + 0.2) * r * 1.4);
+          ctx.lineTo(Math.cos(angle + 0.4) * r, Math.sin(angle + 0.4) * r);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // 6. Radar Pulse (Image 4 style)
+      if (frame.id === 'radar-pulse') {
+        ctx.save();
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        // Concentric rings
+        for (let i = 1; i <= 3; i++) {
+          const pulseR = r * (1 + (time * i) % 0.5);
+          ctx.beginPath();
+          ctx.arc(0, 0, pulseR, 0, Math.PI * 2);
+          ctx.globalAlpha = 1 - ((time * i) % 0.5) * 2;
+          ctx.stroke();
+        }
+        // Scan line
+        ctx.rotate(time * 4);
+        const scanGrad = ctx.createLinearGradient(0, 0, r * 1.5, 0);
+        scanGrad.addColorStop(0, 'rgba(220, 38, 38, 0.8)');
+        scanGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = scanGrad;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, r * 1.5, -0.2, 0.2, false);
+        ctx.lineTo(0, 0);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 7. Stardust Burst (Bursting trails)
+      if (frame.id === 'stardust-burst') {
+        ctx.save();
+        ctx.strokeStyle = '#ffffff';
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 15;
+        for (let i = 0; i < 16; i++) {
+          const angle = (time * 1.5 + i * (Math.PI / 8));
+          const offset = Math.sin(time * 8 + i) * 10;
+          ctx.beginPath();
+          ctx.lineWidth = 2 + Math.random() * 2;
+          ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+
+          // Radiating trail
+          const length = r * (0.8 + Math.sin(time * 12 + i) * 0.4);
+          const tx = Math.cos(angle) * (r + length);
+          const ty = Math.sin(angle) * (r + length);
+
+          // Jagged/Organic curve
+          ctx.quadraticCurveTo(
+            Math.cos(angle + 0.1) * (r + length * 0.5) + offset,
+            Math.sin(angle + 0.1) * (r + length * 0.5) + offset,
+            tx, ty
+          );
+
+          ctx.globalAlpha = 0.4 + Math.random() * 0.6;
+          ctx.stroke();
+
+          // Bright tip
+          ctx.beginPath();
+          ctx.arc(tx, ty, 2, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // 8. Nebula Spiral (Image 1 style - TIGHTER)
+      if (frame.id === 'nebula-spiral') {
+        ctx.save();
+        ctx.shadowColor = '#f0abfc';
+        ctx.shadowBlur = 15;
+        ctx.lineWidth = 10;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 4; i++) {
+          const startAngle = time * 3 + i * (Math.PI / 2);
+          ctx.strokeStyle = i % 2 === 0 ? '#ffffff' : '#f0abfc';
+          ctx.beginPath();
+          for (let step = 0; step < 22; step++) { // Even tighter
+            const angle = startAngle + step * 0.14;
+            const dist = r * (0.8 + step * 0.035); // 1.5r max
+            const tx = Math.cos(angle) * dist;
+            const ty = Math.sin(angle) * dist;
+            if (step === 0) ctx.moveTo(tx, ty);
+            else ctx.lineTo(tx, ty);
+          }
+          ctx.globalAlpha = 0.5;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // 9. Titan Guard (Premium Cosmic Frame)
+      if (frame.id === 'titan-guard') {
+        ctx.save();
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 15;
+        const shieldCount = 4;
+        for (let i = 0; i < shieldCount; i++) {
+          const angle = time * 2.5 + (i * Math.PI * 2 / shieldCount);
+          const dist = r * 1.35;
+          const x = Math.cos(angle) * dist;
+          const y = Math.sin(angle) * dist;
+
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(angle);
+
+          // Shield Pod
+          ctx.fillStyle = '#fbbf24';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-5, -12);
+          ctx.lineTo(8, 0);
+          ctx.lineTo(-5, 12);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // Energy Flare
+          ctx.beginPath();
+          ctx.globalAlpha = 0.4;
+          ctx.arc(0, 0, 15, 0, Math.PI * 2);
+          ctx.fillStyle = '#fde68a';
+          ctx.fill();
+          ctx.restore();
+
+          // Connective energy arc between pods
+          const nextAngle = time * 2.5 + ((i + 1) * Math.PI * 2 / shieldCount);
+          ctx.beginPath();
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha = 0.3 + Math.sin(time * 10 + i) * 0.2;
+          ctx.arc(0, 0, dist, angle, nextAngle);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // 10. Hypnotic Vortex (User Image 3 style)
+      if (frame.id === 'hypnotic-vortex') {
+        ctx.save();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        for (let i = 0; i < 5; i++) {
+          const startAngle = time * 3 + i * (Math.PI * 2 / 5);
+          ctx.beginPath();
+          ctx.lineWidth = 20;
+          ctx.lineCap = 'butt';
+
+          const grad = ctx.createLinearGradient(-r, 0, r, 0);
+          grad.addColorStop(0, '#000000');
+          grad.addColorStop(0.5, '#ffffff');
+          grad.addColorStop(1, '#000000');
+          ctx.strokeStyle = grad;
+
+          for (let step = 0; step < 25; step++) { // Halved steps
+            const angle = startAngle + step * 0.18;
+            const wave = Math.sin(step * 0.5 + time * 10) * 5;
+            const dist = r * (0.8 + step * 0.04) + wave; // Expansion reduced to 0.04 (Max ~1.8r)
+            const tx = Math.cos(angle) * dist;
+            const ty = Math.sin(angle) * dist;
+            if (step === 0) ctx.moveTo(tx, ty);
+            else ctx.lineTo(tx, ty);
+          }
+          ctx.globalAlpha = 0.7;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    } else if (token.isGolden) {
+      // Fallback for natural golden tokens if no frame equipped
       ctx.shadowColor = '#fbbf24';
       ctx.shadowBlur = 35;
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(251, 191, 36, 0.5)';
       ctx.fill();
-      ctx.shadowBlur = 0; // Reset after aura
+      ctx.shadowBlur = 0;
     }
 
     // 2. Draw the Image (Clipped)
@@ -662,14 +1030,33 @@ function drawToken(ctx: CanvasRenderingContext2D, token: FlyingToken): void {
     ctx.restore();
 
     // 3. Optional Overlay Ring
-    if (token.isGolden) {
-      ctx.strokeStyle = '#fbbf24';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.stroke();
+    if (frame.id !== 'default') {
+      let borderColor = frame.borderColor;
+      if (frame.id === 'glitch-nexus') {
+        // Fractured Ring
+        ctx.strokeStyle = '#ffffff';
+        ctx.shadowColor = '#ff00ff';
+        ctx.shadowBlur = 15;
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 8; i++) {
+          const start = i * (Math.PI / 4) + Math.sin(time * 5) * 0.2;
+          const end = start + (Math.PI / 6);
+          ctx.beginPath();
+          ctx.arc(0, 0, r, start, end);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = frame.ringWidth;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
+
   } else {
+    // FALLBACK
     ctx.shadowColor = 'rgba(0,0,0,0.5)';
     ctx.shadowBlur = 10;
     ctx.shadowOffsetX = 4;
@@ -716,8 +1103,8 @@ function drawToken(ctx: CanvasRenderingContext2D, token: FlyingToken): void {
     if (token.tokenData.symbol.length > 3) ctx.font = `bold ${innerR * 0.5}px "Space Grotesk"`;
     ctx.fillText(token.tokenData.symbol, 0, 2);
     ctx.shadowColor = 'transparent';
-
   }
+
 
   ctx.restore();
 }
@@ -977,10 +1364,11 @@ function drawCutFlash(
   return;
 }
 
-function drawBladeTrail(ctx: CanvasRenderingContext2D, trail: SlicePoint[], skin: BladeSkin): void {
+function drawBladeTrail(ctx: CanvasRenderingContext2D, trail: SlicePoint[], skin: BladeSkin, state: GameState): void {
   if (trail.length < 2) return;
   const now = Date.now();
   const maxAge = 180;
+  const megaMult = state.powerUps.megaBlade.active ? 2.5 : 1.0;
 
   for (let i = 1; i < trail.length; i++) {
     const p1 = trail[i - 1];
@@ -990,7 +1378,7 @@ function drawBladeTrail(ctx: CanvasRenderingContext2D, trail: SlicePoint[], skin
 
     const life = 1 - age / maxAge;
     const taper = (i / trail.length);
-    const w = life * taper * 12 + 1;
+    const w = (life * taper * 12 + 1) * megaMult;
 
     ctx.save();
     ctx.lineCap = 'round';
@@ -999,40 +1387,42 @@ function drawBladeTrail(ctx: CanvasRenderingContext2D, trail: SlicePoint[], skin
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(p2.x, p2.y);
 
+    // Outer glow pass
     ctx.shadowBlur = w * 2;
     ctx.shadowColor = skin.trail.glow.replace('{a}', '0.5');
     ctx.strokeStyle = skin.trail.outer.replace('{a}', String(life * 0.3));
     ctx.lineWidth = w * 2.5;
     ctx.stroke();
 
+    // Inner glow pass
     ctx.shadowBlur = 0;
     ctx.strokeStyle = skin.trail.glow.replace('{a}', String(life * 0.8));
     ctx.lineWidth = w;
     ctx.stroke();
-
-    // Removed the white "1 inch line" core from the trail for a juicier, glowier look
-    // ctx.strokeStyle = skin.trail.core.replace('{a}', String(life * 0.9));
-    // ctx.lineWidth = w * 0.3;
-    // ctx.stroke();
 
     ctx.restore();
   }
 }
 
 function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]): void {
+  if (particles.length === 0) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
   for (const p of particles) {
     const t = 1 - (p.life / p.maxLife);
     const easeOutQuad = (v: number) => 1 - (1 - v) * (1 - v);
     const alpha = Math.max(0, 1 - easeOutQuad(t));
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = alpha;
+
     ctx.beginPath();
+    ctx.globalAlpha = alpha;
     ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
     ctx.fillStyle = p.color;
     ctx.fill();
-    ctx.restore();
   }
+
+  ctx.restore();
 }
 
 function drawSingularity(ctx: CanvasRenderingContext2D, s: { x: number, y: number, radius: number, active: boolean }) {
@@ -1072,6 +1462,113 @@ function drawSingularity(ctx: CanvasRenderingContext2D, s: { x: number, y: numbe
   ctx.stroke();
 
   ctx.restore();
+}
+
+function drawBlackHole(ctx: CanvasRenderingContext2D, bh: { x: number, y: number }) {
+  ctx.save();
+  ctx.translate(bh.x, bh.y);
+
+  const time = Date.now() / 1000;
+  const radius = 35 + Math.sin(time * 8) * 5;
+
+  // Swirling void - multiple layers for deep effect
+  ctx.rotate(time * -1.5);
+  for (let i = 0; i < 4; i++) {
+    ctx.rotate(Math.PI / 2);
+    ctx.fillStyle = `hsla(280, 100%, 70%, ${0.08 + Math.sin(time + i) * 0.04})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 110, 30, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Event horizon glow
+  const grad = ctx.createRadialGradient(0, 0, radius, 0, 0, 140);
+  grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+  grad.addColorStop(0.2, 'rgba(147, 51, 234, 0.4)');
+  grad.addColorStop(0.5, 'rgba(49, 46, 129, 0.2)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, 140, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Singular center
+  ctx.fillStyle = '#000000';
+  ctx.shadowColor = '#9333ea';
+  ctx.shadowBlur = 20;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawLasers(ctx: CanvasRenderingContext2D, lasers: any[], time: number) {
+  ctx.save();
+  for (const l of lasers) {
+    const alpha = l.active ? (0.7 + Math.sin(time * 25) * 0.3) : 0.15;
+    const color = l.type === 'danger' ? `hsla(0, 100%, 60%, ${alpha})` : `hsla(180, 100%, 65%, ${alpha})`;
+
+    ctx.shadowBlur = l.active ? 25 : 0;
+    ctx.shadowColor = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = l.active ? 5 : 1.5;
+
+    ctx.beginPath();
+    ctx.moveTo(0, l.y);
+    ctx.lineTo(2500, l.y);
+    ctx.stroke();
+
+    if (l.active) {
+      // Core white beam
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function PowerUpHud({ progress, onActivate, midasActive, megaActive }: { progress: any, onActivate: (type: 'midas-touch' | 'mega-blade') => void, midasActive: boolean, megaActive: boolean }) {
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 z-[20] pointer-events-auto">
+      {/* Mega Blade Button */}
+      {progress.megaBlade > 0 && (
+        <button
+          onClick={() => onActivate('mega-blade')}
+          disabled={megaActive}
+          className={`group flex flex-col items-center gap-1.5 transition-all active:scale-90 ${megaActive ? 'opacity-40 grayscale pointer-events-none' : 'hover:scale-110'}`}
+        >
+          <div className="relative w-14 h-14 rounded-2xl bg-cyan-500/10 border-2 border-cyan-500/40 flex items-center justify-center overflow-hidden">
+            <Sword className={`w-7 h-7 text-cyan-400 group-hover:animate-pulse ${megaActive ? '' : 'animate-bounce-subtle'}`} />
+            {megaActive && <div className="absolute inset-0 bg-cyan-400/20 animate-pulse" />}
+            <div className="absolute -top-1 -right-1 bg-cyan-500 text-black text-[10px] font-black font-display rounded-full w-5 h-5 flex items-center justify-center border-2 border-black/50 shadow-lg">
+              {progress.megaBlade}
+            </div>
+          </div>
+          <span className="text-[9px] font-display font-black text-cyan-400 tracking-widest uppercase text-shadow-glow">MEGA BLADE</span>
+        </button>
+      )}
+
+      {/* Midas Touch Button */}
+      {progress.midasTouch > 0 && (
+        <button
+          onClick={() => onActivate('midas-touch')}
+          disabled={midasActive}
+          className={`group flex flex-col items-center gap-1.5 transition-all active:scale-90 ${midasActive ? 'opacity-40 grayscale pointer-events-none' : 'hover:scale-110'}`}
+        >
+          <div className="relative w-14 h-14 rounded-2xl bg-yellow-500/10 border-2 border-yellow-500/40 flex items-center justify-center overflow-hidden">
+            <Sparkles className={`w-7 h-7 text-yellow-400 group-hover:animate-pulse ${midasActive ? '' : 'animate-bounce-subtle'}`} />
+            {midasActive && <div className="absolute inset-0 bg-yellow-400/20 animate-pulse" />}
+            <div className="absolute -top-1 -right-1 bg-yellow-500 text-black text-[10px] font-black font-display rounded-full w-5 h-5 flex items-center justify-center border-2 border-black/50 shadow-lg">
+              {progress.midasTouch}
+            </div>
+          </div>
+          <span className="text-[9px] font-display font-black text-yellow-400 tracking-widest uppercase text-shadow-glow">MIDAS TOUCH</span>
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default GameCanvas;

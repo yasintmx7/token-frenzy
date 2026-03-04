@@ -47,6 +47,7 @@ const Game = () => {
   const [screen, setScreen] = useState<Screen>('menu');
   const [mode, setMode] = useState<GameMode>('classic');
   const [stats, setStats] = useState<GameStats | null>(null);
+  const [progress, setProgress] = useState(loadProgress());
   const [gameKey, setGameKey] = useState(0);
   const [isVertical, setIsVerticalState] = useState(loadProgress().isVertical);
 
@@ -132,19 +133,31 @@ const Game = () => {
     checkOwnership();
   }, [checkOwnership]);
 
-  // --- GAME HANDLERS ---
+  const [reviveStats, setReviveStats] = useState<{ score: number; tokensSliced: number; bestCombo: number } | null>(null);
+  const [sessionId, setSessionId] = useState<string>('');
+
+  const handleRevive = useCallback(() => {
+    if (stats) {
+      setReviveStats({
+        score: stats.score,
+        tokensSliced: stats.tokensSliced,
+        bestCombo: stats.bestCombo
+      });
+      setGameKey(prev => prev + 1);
+      setScreen('playing');
+      window.Android?.setState('playing');
+    }
+  }, [stats]);
+
   const handleStart = useCallback((selectedMode: GameMode) => {
+    const latestProgress = loadProgress();
+    setProgress(latestProgress);
+    setSessionId(Date.now().toString() + '-' + Math.random().toString(36).substring(2, 9));
+    setReviveStats(null);
     setMode(selectedMode);
     setGameKey(prev => prev + 1);
     setScreen('playing');
     window.Android?.setState('playing');
-  }, []);
-
-  const handleGameOver = useCallback((gameStats: GameStats) => {
-    setStats(gameStats);
-    updateProgressAfterGame(gameStats.score, gameStats.tokensSliced, gameStats.bestCombo);
-    setScreen('gameOver');
-    window.Android?.setState('gameover');
   }, []);
 
   const handleRestart = useCallback(() => {
@@ -152,15 +165,26 @@ const Game = () => {
       setShowMintOverlay(true);
       return;
     }
+    setSessionId(Date.now().toString() + '-' + Math.random().toString(36).substring(2, 9));
+    setReviveStats(null);
     setGameKey(prev => prev + 1);
     setScreen('playing');
     window.Android?.setState('playing');
   }, [isLocked]);
 
-  const [initialMenuTab, setInitialMenuTab] = useState<'play' | 'rank' | 'skins'>('play');
+  const handleGameOver = useCallback((gameStats: GameStats) => {
+    setStats(gameStats);
+    updateProgressAfterGame(gameStats.score, gameStats.tokensSliced, gameStats.bestCombo);
+    setProgress(loadProgress()); // Refresh local progress state
+    setScreen('gameOver');
+    window.Android?.setState('gameover');
+  }, []);
 
-  const handleMenu = useCallback((tab: 'play' | 'rank' | 'skins' = 'play') => {
+  const [initialMenuTab, setInitialMenuTab] = useState<'play' | 'rank' | 'shop'>('play');
+
+  const handleMenu = useCallback((tab: 'play' | 'rank' | 'shop' = 'play') => {
     setInitialMenuTab(tab);
+    setSessionId('');
     setScreen('menu');
     window.Android?.setState('home');
   }, []);
@@ -180,7 +204,6 @@ const Game = () => {
   useEffect(() => {
     window.handleAndroidBack = () => {
       if (screen === 'playing') {
-        // If the game component has registered its own specific back handler (for pausing)
         if (window.onGameBack) {
           window.onGameBack();
         } else {
@@ -189,7 +212,6 @@ const Game = () => {
       } else if (screen === 'gameOver') {
         handleMenu('play');
       } else if (screen === 'menu') {
-        // Handled by MainMenu via its own listener or window.handleAndroidBack override
       }
     };
     return () => { window.handleAndroidBack = undefined; };
@@ -205,7 +227,14 @@ const Game = () => {
       >
         {screen === 'menu' && <MainMenu onStart={handleStart} initialTab={initialMenuTab} hasPass={hasPass} onRequestMint={() => setShowMintOverlay(true)} />}
         {screen === 'gameOver' && stats && (
-          <GameOver stats={stats} onRestart={handleRestart} onMenu={() => handleMenu('play')} onViewRank={() => handleMenu('rank')} />
+          <GameOver
+            stats={stats}
+            onRestart={handleRestart}
+            onMenu={() => handleMenu('play')}
+            onViewRank={() => handleMenu('rank')}
+            onRevive={handleRevive}
+            sessionId={sessionId}
+          />
         )}
         {screen === 'playing' && (
           <>
@@ -216,6 +245,8 @@ const Game = () => {
               onRestart={handleRestart}
               onExit={handleMenu}
               forcePaused={isLocked}
+              initialStats={reviveStats || undefined}
+              settings={progress.settings}
             />
             {(!hasPass && trialTime > 0) && <TrialTimer seconds={trialTime} />}
           </>

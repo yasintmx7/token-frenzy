@@ -3,7 +3,12 @@
 
 let audioCtx: AudioContext | null = null;
 let _muted = false;
+let _sfxEnabled = true;
+let _musicEnabled = true;
+let _calmMode = false;
 let _volume = 0.5;
+
+let _musicOscs: (OscillatorNode | GainNode)[] = [];
 
 const STORAGE_KEY = 'token-frenzy-sound';
 
@@ -13,6 +18,9 @@ function loadSoundPrefs() {
     if (data) {
       const parsed = JSON.parse(data);
       _muted = parsed.muted ?? false;
+      _sfxEnabled = parsed.sfxEnabled ?? true;
+      _musicEnabled = parsed.musicEnabled ?? true;
+      _calmMode = parsed.calmMode ?? false;
       _volume = parsed.volume ?? 0.5;
     }
   } catch { /* ignore */ }
@@ -21,7 +29,13 @@ loadSoundPrefs();
 
 function saveSoundPrefs() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ muted: _muted, volume: _volume }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      muted: _muted,
+      sfxEnabled: _sfxEnabled,
+      musicEnabled: _musicEnabled,
+      calmMode: _calmMode,
+      volume: _volume
+    }));
   } catch { /* ignore */ }
 }
 
@@ -29,15 +43,21 @@ function getCtx(): AudioContext | null {
   if (_muted) return null;
   if (!audioCtx) {
     try {
-      audioCtx = new AudioContext();
+      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
     } catch {
       return null;
     }
   }
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
   return audioCtx;
+}
+
+export function resumeAudio(): void {
+  const ctx = getCtx();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().then(() => {
+      updateMusic();
+    });
+  }
 }
 
 function createGain(ctx: AudioContext, volume: number): GainNode {
@@ -52,54 +72,76 @@ function createGain(ctx: AudioContext, volume: number): GainNode {
 /** Slice sound — short bright swoosh with random pitch variation */
 export function playSlice(): void {
   const ctx = getCtx();
-  if (!ctx) return;
+  if (!ctx || !_sfxEnabled) return;
+
+  if (ctx.state === 'suspended') ctx.resume();
 
   const now = ctx.currentTime;
-  const gain = createGain(ctx, 0.15);
 
-  // Main tone — randomized pitch for variety
-  const basePitch = 800 + Math.random() * 600;
-  const osc = ctx.createOscillator();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(basePitch, now);
-  osc.frequency.exponentialRampToValueAtTime(basePitch * 2.5, now + 0.06);
-  osc.frequency.exponentialRampToValueAtTime(basePitch * 0.5, now + 0.12);
+  // 1. Sharp Impact Click
+  const snap = ctx.createOscillator();
+  const snapGain = createGain(ctx, 0.2);
+  snap.type = 'triangle';
+  snap.frequency.setValueAtTime(1200, now);
+  snap.frequency.exponentialRampToValueAtTime(100, now + 0.03);
+  snapGain.gain.setValueAtTime(0.2 * _volume, now);
+  snapGain.gain.linearRampToValueAtTime(0.001, now + 0.03);
+  snap.connect(snapGain);
+  snap.start(now);
+  snap.stop(now + 0.03);
 
-  gain.gain.setValueAtTime(0.15 * _volume, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-
-  osc.connect(gain);
-  osc.start(now);
-  osc.stop(now + 0.13);
-
-  // Noise burst for "swoosh" texture
-  const bufferSize = ctx.sampleRate * 0.08;
-  const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) {
-    data[i] = (Math.random() * 2 - 1) * 0.3;
-  }
-  const noise = ctx.createBufferSource();
-  noise.buffer = noiseBuffer;
-
-  const noiseGain = createGain(ctx, 0.06);
-  noiseGain.gain.setValueAtTime(0.06 * _volume, now);
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  // 2. Resonant Sweep (The "Swoosh")
+  const sweep = ctx.createOscillator();
+  const sweepGain = createGain(ctx, 0.15);
+  sweep.type = 'sawtooth';
+  const sweepPitch = 600 + Math.random() * 400;
+  sweep.frequency.setValueAtTime(sweepPitch, now);
+  sweep.frequency.exponentialRampToValueAtTime(sweepPitch * 3, now + 0.06);
+  sweep.frequency.exponentialRampToValueAtTime(sweepPitch * 0.2, now + 0.15);
 
   const filter = ctx.createBiquadFilter();
-  filter.type = 'highpass';
-  filter.frequency.value = 3000;
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(2000, now);
+  filter.frequency.exponentialRampToValueAtTime(500, now + 0.15);
+  filter.Q.value = 5;
 
-  noise.connect(filter);
-  filter.connect(noiseGain);
+  sweepGain.gain.setValueAtTime(0, now);
+  sweepGain.gain.linearRampToValueAtTime(0.15 * _volume, now + 0.02);
+  sweepGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+  sweep.connect(filter);
+  filter.connect(sweepGain);
+  sweep.start(now);
+  sweep.stop(now + 0.16);
+
+  // High-frequency noise texture
+  const noiseLen = ctx.sampleRate * 0.12;
+  const noiseBuffer = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < noiseLen; i++) data[i] = (Math.random() * 2 - 1) * 0.4;
+
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuffer;
+  const noiseGain = createGain(ctx, 0.08);
+  const hpf = ctx.createBiquadFilter();
+  hpf.type = 'highpass';
+  hpf.frequency.value = 5000;
+
+  noiseGain.gain.setValueAtTime(0.08 * _volume, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+  noise.connect(hpf);
+  hpf.connect(noiseGain);
   noise.start(now);
-  noise.stop(now + 0.09);
+  noise.stop(now + 0.1);
 }
 
 /** Combo jingle — ascending arpeggio that gets more intense with combo level */
 export function playCombo(combo: number): void {
   const ctx = getCtx();
-  if (!ctx) return;
+  if (!ctx || !_sfxEnabled) return;
+
+  if (ctx.state === 'suspended') ctx.resume();
 
   const now = ctx.currentTime;
   const intensity = Math.min(combo / 20, 1);
@@ -114,27 +156,49 @@ export function playCombo(combo: number): void {
   for (let i = 0; i < noteCount; i++) {
     const semitone = intervals[i % intervals.length];
     const freq = baseFreq * Math.pow(2, semitone / 12);
-    const t = now + i * 0.06;
+    const t = now + i * 0.08;
 
+    // Sub-note for body
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(freq / 2, t);
+    const subG = createGain(ctx, 0.05);
+    subG.gain.setValueAtTime(0, t);
+    subG.gain.linearRampToValueAtTime(0.05 * _volume, t + 0.05);
+    subG.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    sub.connect(subG);
+    sub.start(t);
+    sub.stop(t + 0.3);
+
+    // Main chime note
     const osc = ctx.createOscillator();
-    osc.type = intensity > 0.5 ? 'square' : 'triangle';
+    osc.type = intensity > 0.6 ? 'square' : 'triangle';
     osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.02, t + 0.1);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(5000, t);
+    filter.frequency.exponentialRampToValueAtTime(400, t + 0.4);
 
     const gain = createGain(ctx, 0);
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.08 * _volume * (1 + intensity * 0.5), t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    gain.gain.linearRampToValueAtTime(0.12 * _volume * (1 + intensity), t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
 
-    osc.connect(gain);
+    osc.connect(filter);
+    filter.connect(gain);
     osc.start(t);
-    osc.stop(t + 0.16);
+    osc.stop(t + 0.45);
   }
 }
 
 /** Bomb explosion — realistic multi-layered explosion */
 export function playBomb(): void {
   const ctx = getCtx();
-  if (!ctx) return;
+  if (!ctx || !_sfxEnabled) return;
+
+  if (ctx.state === 'suspended') ctx.resume();
 
   const now = ctx.currentTime;
 
@@ -233,7 +297,9 @@ export function playBomb(): void {
 /** Game over — descending sad tones */
 export function playGameOver(): void {
   const ctx = getCtx();
-  if (!ctx) return;
+  if (!ctx || !_sfxEnabled) return;
+
+  if (ctx.state === 'suspended') ctx.resume();
 
   const now = ctx.currentTime;
   const notes = [440, 392, 349, 262]; // A4 → G4 → F4 → C4
@@ -260,7 +326,9 @@ export function playGameOver(): void {
 /** Singularity Collapse sound — deep powerful implosion followed by a vacuum blast */
 export function playZenCollapse(): void {
   const ctx = getCtx();
-  if (!ctx) return;
+  if (!ctx || !_sfxEnabled) return;
+
+  if (ctx.state === 'suspended') ctx.resume();
 
   const now = ctx.currentTime;
 
@@ -318,4 +386,92 @@ export function getVolume(): number {
 export function setVolume(v: number): void {
   _volume = Math.max(0, Math.min(1, v));
   saveSoundPrefs();
+}
+
+export function setSFXEnabled(enabled: boolean): void {
+  _sfxEnabled = enabled;
+  saveSoundPrefs();
+}
+
+export function setMusicEnabled(enabled: boolean): void {
+  _musicEnabled = enabled;
+  saveSoundPrefs();
+  updateMusic();
+}
+
+export function setCalmMode(enabled: boolean): void {
+  _calmMode = enabled;
+  saveSoundPrefs();
+  updateMusic();
+}
+
+export function isSFXEnabled(): boolean {
+  return _sfxEnabled;
+}
+
+export function isMusicEnabled(): boolean {
+  return _musicEnabled;
+}
+
+export function isCalmMode(): boolean {
+  return _calmMode;
+}
+
+// ===== PROCEDURAL MUSIC =====
+
+export function updateMusic(): void {
+  const ctx = getCtx();
+
+  // Stop existing music
+  if (_musicOscs.length > 0) {
+    _musicOscs.forEach(node => {
+      try { (node as any).stop?.(); } catch (e) { }
+    });
+    _musicOscs = [];
+  }
+
+  if (!ctx || !_musicEnabled || _muted) return;
+
+  // Create a simple calm ambient pad (Minor 7th chord or similar)
+  // Frequencies for a calm D minor 7 / G base: G2, D3, F3, A3, C4
+  const freqs = _calmMode
+    ? [98, 146.83, 174.61, 233.08, 261.63] // Relaxing Eb included G-base
+    : [130.81, 196.00, 261.63, 329.63, 392.00]; // Rich C Major Stack
+
+  freqs.forEach((f, i) => {
+    // Two oscillators per note for Chorus/Phasing richness
+    [f, f * 1.002].forEach((freq, j) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+
+      osc.type = _calmMode ? 'sine' : 'triangle';
+      osc.frequency.value = freq;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = _calmMode ? 400 : 800;
+      filter.Q.value = 1;
+
+      g.gain.value = 0;
+      const now = ctx.currentTime;
+      const targetVol = 0.12 * (1 / freqs.length) * _volume;
+      g.gain.linearRampToValueAtTime(targetVol, now + 4 + i);
+
+      // Complex Modulation
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.frequency.value = 0.05 + (i * 0.02) + (j * 0.01);
+      lfoGain.gain.value = targetVol * 0.4;
+      lfo.connect(lfoGain);
+      lfoGain.connect(g.gain);
+      lfo.start();
+
+      osc.connect(filter);
+      filter.connect(g);
+      g.connect(ctx.destination);
+      osc.start();
+
+      _musicOscs.push(osc, g, lfo, filter);
+    });
+  });
 }

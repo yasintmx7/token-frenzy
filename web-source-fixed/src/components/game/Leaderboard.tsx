@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Trophy, Users, Calendar, Loader2, Zap, Layout } from 'lucide-react';
+import { Trophy, Users, Calendar, Loader2, Zap, Layout, X, Star, Flame, Shield, Sword, Package, User } from 'lucide-react';
 import { type GameMode } from '@/lib/gameEngine';
 import { useNativeWallet } from '@/components/NativeWalletContext';
+import { getCloudProgress, type PlayerProgress } from '@/lib/storage';
+import { computeLevelFromTotalXp, XP_CONFIG } from '@/lib/xp';
 
 interface ScoreEntry {
     id: number;
@@ -17,6 +19,13 @@ export const Leaderboard = () => {
     const [scores, setScores] = useState<ScoreEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedMode, setSelectedMode] = useState<GameMode>('classic');
+    const [viewingProfile, setViewingProfile] = useState<{ wallet: string; data: PlayerProgress | null } | null>(null);
+
+    const openProfile = async (wallet: string) => {
+        setViewingProfile({ wallet, data: null });
+        const data = await getCloudProgress(wallet);
+        setViewingProfile({ wallet, data });
+    };
 
     const fetchScores = async (mode: GameMode) => {
         try {
@@ -143,7 +152,8 @@ export const Leaderboard = () => {
                                 return (
                                     <tr
                                         key={entry.id}
-                                        className={`transition-all ${isUser ? 'relative' : 'rounded-xl'}`}
+                                        onClick={() => openProfile(entry.wallet)}
+                                        className={`transition-all group cursor-pointer hover:bg-white/5 active:scale-[0.98] ${isUser ? 'relative' : 'rounded-xl'}`}
                                     >
                                         <td className={`px-4 py-3 align-middle transition-all ${isUser ? 'bg-purple-600/30 rounded-l-2xl' : ''}`}>
                                             <div className={`w-7 h-7 flex items-center justify-center rounded-lg text-xs font-black
@@ -185,6 +195,104 @@ export const Leaderboard = () => {
                     </table>
                 )}
             </div>
+            {/* Profile Modal Overlay */}
+            {viewingProfile && (
+                <ProfileModal
+                    wallet={viewingProfile.wallet}
+                    profile={viewingProfile.data}
+                    onClose={() => setViewingProfile(null)}
+                />
+            )}
         </div>
     );
 };
+
+function ProfileModal({ wallet, profile, onClose }: { wallet: string; profile: PlayerProgress | null; onClose: () => void }) {
+    if (!profile) {
+        return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                <div className="w-full max-w-[320px] glass-panel rounded-[24px] p-8 flex flex-col items-center gap-4 border-white/10 shadow-2xl">
+                    <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+                    <p className="text-xs font-black tracking-widest text-muted-foreground uppercase text-center">Loading Profile Data...</p>
+                    <button onClick={onClose} className="mt-4 px-6 py-2 rounded-xl bg-white/5 text-[10px] font-bold tracking-widest uppercase hover:bg-white/10 transition-colors">Close</button>
+                </div>
+            </div>
+        );
+    }
+
+    const { level } = computeLevelFromTotalXp(profile.totalXp);
+    const totalItems = (profile.ownedBlades?.length || 0) + (profile.ownedBoards?.length || 0) + (profile.ownedFrames?.length || 0);
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
+            <div className="w-full max-w-[340px] glass-panel rounded-[28px] overflow-hidden border-white/10 shadow-[0_0_50px_rgba(168,85,247,0.3)] animate-in scale-in duration-300">
+                {/* Header/Banner */}
+                <div className="h-24 bg-gradient-to-br from-purple-600/30 to-blue-600/30 relative">
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 p-2 rounded-full bg-black/40 hover:bg-black/60 transition-colors z-20"
+                    >
+                        <X className="w-4 h-4 text-white" />
+                    </button>
+                </div>
+
+                {/* Profile Info */}
+                <div className="px-6 pb-8 -mt-10 flex flex-col items-center relative z-10 text-center">
+                    <div className="w-20 h-20 rounded-2xl bg-[#0b071a] border-4 border-[#140b2e] flex items-center justify-center shadow-xl mb-3 relative overflow-hidden">
+                        <User className="w-10 h-10 text-purple-400" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-purple-500/20 to-transparent" />
+                    </div>
+
+                    <h2 className="text-xl font-display font-black text-white tracking-tight leading-tight">
+                        {profile.username || "Anonymous Hero"}
+                    </h2>
+                    <p className="text-[10px] font-mono font-bold text-muted-foreground mt-1 mb-4 select-all">
+                        {wallet.slice(0, 8)}...{wallet.slice(-8)}
+                    </p>
+
+                    {/* Level Badge */}
+                    <div className="inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-1.5 rounded-full mb-6 shadow-lg shadow-orange-500/20">
+                        <Shield className="w-3.5 h-3.5 text-white" />
+                        <span className="text-[10px] font-black text-white italic tracking-tighter">LEVEL {level}</span>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-2 gap-3 w-full mb-6">
+                        <StatItem label="TOTAL SCORE" value={profile.totalScore.toLocaleString()} icon={Trophy} color="text-amber-400" />
+                        <StatItem label="XP EARNED" value={profile.totalXp.toLocaleString()} icon={Star} color="text-cyan-400" />
+                        <StatItem label="BEST COMBO" value={`x${profile.bestCombo}`} icon={Flame} color="text-orange-500" />
+                        <StatItem label="SLICED" value={profile.totalTokensSliced.toLocaleString()} icon={Sword} color="text-pink-400" />
+                    </div>
+
+                    {/* Collection Stats */}
+                    <div className="w-full p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center border border-purple-500/20">
+                                <Package className="w-5 h-5 text-purple-400" />
+                            </div>
+                            <div className="text-left">
+                                <div className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">COLLECTION</div>
+                                <div className="text-sm font-black text-white">{totalItems} ITEMS</div>
+                            </div>
+                        </div>
+                        <div className="flex -space-x-2">
+                            {Array.from({ length: Math.min(3, totalItems) }).map((_, i) => (
+                                <div key={i} className="w-6 h-6 rounded-full bg-white/10 border-2 border-[#140b2e]" />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function StatItem({ label, value, icon: Icon, color }: { label: string; value: string; icon: any; color: string }) {
+    return (
+        <div className="bg-white/5 rounded-2xl p-3 border border-white/5 flex flex-col items-center">
+            <Icon className={`w-4 h-4 mb-2 ${color}`} />
+            <div className="text-[8px] font-black text-muted-foreground/60 uppercase tracking-widest mb-0.5">{label}</div>
+            <div className="text-sm font-black text-white">{value}</div>
+        </div>
+    );
+}

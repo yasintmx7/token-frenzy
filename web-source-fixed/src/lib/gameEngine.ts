@@ -1,6 +1,10 @@
 import { TOKENS, type TokenData } from './tokens';
+import { type TokenFrame, getFrameById } from './tokenFrames';
+import { loadProgress } from './storage';
 
-export type GameMode = 'classic' | 'frustration' | 'zen';
+export type GameMode = 'classic' | 'frustration' | 'zen' | 'timewarp' | 'void' | 'laser';
+
+// ... (FlyingToken and other interfaces)
 
 export interface FlyingToken {
   id: number;
@@ -17,6 +21,7 @@ export interface FlyingToken {
   isBomb: boolean;
   type: 'small' | 'medium' | 'large';
   isGolden?: boolean;
+  generation?: number; // Added for 'timewarp' (Split mode)
 }
 
 export interface SlicedHalf {
@@ -97,7 +102,17 @@ export interface GameState {
   timeLeft?: number; // Optional countdown timer for Zen mode
   soundQueue: SoundEvent[];
   isLagging?: boolean;
+  selectedTokenFrame: TokenFrame;
   singularity: { x: number, y: number, active: boolean, charge: number, radius: number };
+  timeScale: number;
+  blackHole?: { x: number, y: number, vx: number, vy: number };
+  lasers?: { y: number, type: 'safe' | 'danger', active: boolean }[];
+  powerUps: {
+    midasTouch: { active: boolean; timeLeft: number };
+    megaBlade: { active: boolean; timeLeft: number };
+  };
+  // Void (Twin) Game specific state
+  twinTargetId?: string | null;
 }
 
 interface ModeConfig {
@@ -113,6 +128,9 @@ const MODE_CONFIGS: Record<GameMode, ModeConfig> = {
   classic: { lives: 3, bombRate: 0.10, spawnInterval: 1.4, speedMult: 0.45, batchMin: 1, batchMax: 3 },
   frustration: { lives: 3, bombRate: 0.15, spawnInterval: 0.9, speedMult: 0.60, batchMin: 2, batchMax: 4 },
   zen: { lives: 999, bombRate: 0, spawnInterval: 1.25, speedMult: 0.48, batchMin: 2, batchMax: 4 },
+  timewarp: { lives: 3, bombRate: 0.15, spawnInterval: 1.4, speedMult: 0.45, batchMin: 2, batchMax: 4 },
+  void: { lives: 3, bombRate: 0.15, spawnInterval: 1.4, speedMult: 0.45, batchMin: 2, batchMax: 4 },
+  laser: { lives: 3, bombRate: 0.12, spawnInterval: 1.0, speedMult: 0.65, batchMin: 2, batchMax: 4 },
 };
 
 export function createGameState(mode: GameMode): GameState {
@@ -137,8 +155,25 @@ export function createGameState(mode: GameMode): GameState {
     nextId: 0,
     elapsed: 0,
     soundQueue: [],
+    selectedTokenFrame: getFrameById(loadProgress().selectedFrame),
     singularity: { x: 0, y: 0, active: false, charge: 0, radius: 0 },
+    timeScale: 1.0,
+    powerUps: {
+      midasTouch: { active: false, timeLeft: 0 },
+      megaBlade: { active: false, timeLeft: 0 },
+    },
   };
+
+  if (mode === 'void') {
+    state.twinTargetId = null;
+  }
+
+  if (mode === 'laser') {
+    state.lasers = [
+      { y: 0, type: 'danger', active: false },
+      { y: 0, type: 'safe', active: false }
+    ];
+  }
 
   if (mode === 'zen') {
     state.timeLeft = 90;
@@ -204,6 +239,20 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
     }
   }
 
+
+  // --- LASER MODE UPDATE ---
+  if (state.mode === 'laser' && state.lasers) {
+    // Increased to 3-4 lasers for more difficulty
+    if (state.lasers.length < 3) {
+      state.lasers.push({ y: 0, type: 'danger', active: false });
+    }
+    state.lasers.forEach((l, i) => {
+      l.y = (h / (state.lasers.length + 1)) * (i + 1) + Math.sin(state.elapsed * 3 + i) * 80;
+      // Faster cycle for higher difficulty
+      l.active = (Math.floor(state.elapsed * 2.5) % 3 !== 0);
+    });
+  }
+
   // Timer logic for Zen Mode
   if (state.mode === 'zen' && state.timeLeft !== undefined) {
     state.timeLeft -= dt;
@@ -224,10 +273,9 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
     state.spawnTimer = config.spawnInterval * difficultyMult * landscapeSpawnMult;
   }
 
-
-
-  // Physics
+  // physics
   const gravity = h * 0.35;
+
   for (const token of state.tokens) {
     token.x += token.vx * dt;
     token.y += token.vy * dt;
@@ -235,16 +283,30 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
     token.rotation += token.rotationSpeed * dt;
   }
 
-  // Remove off-screen tokens — lose life for missed tokens in classic mode
+  // Remove tokens:
+  // 1. Off-screen (lose life if missed)
+  // 2. Sliced (removed immediately for performance optimization)
   for (let i = state.tokens.length - 1; i >= 0; i--) {
     const token = state.tokens[i];
-    if (token.y > h + 120 && token.vy > 0) {
-      if (!token.sliced && !token.isBomb && state.mode !== 'zen' && state.mode !== 'frustration') {
+
+    // Optimization: Remove sliced tokens immediately
+    if (token.sliced) {
+      state.tokens.splice(i, 1);
+      continue;
+    }
+
+    const isOffScreen = (token.y > h + 120 && token.vy > 0);
+
+    if (isOffScreen) {
+      // Missing a token drops a life.
+      if (!token.isBomb && state.mode !== 'zen' && state.mode !== 'frustration') {
         state.missedTokens++;
         state.combo = 0;
         state.comboText = '';
         state.lives--;
-        state.shakeAmount = 1; // Greatly reduced shake for missed tokens
+        state.shakeAmount = 1;
+        if (state.mode === 'void') state.twinTargetId = null; // reset pair state on miss
+
         if (state.lives <= 0) {
           state.gameOver = true;
           state.soundQueue.push({ type: 'gameOver' });
@@ -254,16 +316,21 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
     }
   }
 
-  // Update particles
-  for (const p of state.particles) {
+  // 4. Update particles (Faster loop, removing dead ones in-place or with filter)
+  // Optimization: use a traditional for loop and splice for better memory control during high intensity
+  for (let i = state.particles.length - 1; i >= 0; i--) {
+    const p = state.particles[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      state.particles.splice(i, 1);
+      continue;
+    }
     const drag = Math.pow(0.01, dt);
     p.vx *= drag;
     p.vy *= drag;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    p.life -= dt;
   }
-  state.particles = state.particles.filter(p => p.life > 0);
 
   // Update sliced halves
   for (const half of state.slicedHalves) {
@@ -271,6 +338,16 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
     half.flash = Math.max(0, 1 - (half.t / half.flashDur));
   }
   state.slicedHalves = state.slicedHalves.filter(half => half.t < half.duration);
+
+  // Power-up decay
+  if (state.powerUps.midasTouch.active) {
+    state.powerUps.midasTouch.timeLeft -= dt;
+    if (state.powerUps.midasTouch.timeLeft <= 0) state.powerUps.midasTouch.active = false;
+  }
+  if (state.powerUps.megaBlade.active) {
+    state.powerUps.megaBlade.timeLeft -= dt;
+    if (state.powerUps.megaBlade.timeLeft <= 0) state.powerUps.megaBlade.active = false;
+  }
 }
 
 function spawnTokenBatch(state: GameState, w: number, h: number): void {
@@ -303,37 +380,48 @@ function spawnTokenBatch(state: GameState, w: number, h: number): void {
     if (isBomb) {
       radius = Math.max(20, Math.min(w * 0.05, 30));
     }
-
     const spawnX = w * (0.1 + Math.random() * 0.8);
-    const spawnY = h + radius * 2;
-
-    // 15% faster speed in landscape
+    let spawnY = h + radius * 2;
     const speedMult = config.speedMult * (w > h ? 1.15 : 1.0);
     const launchHeight = isBomb ? (1.3 + Math.random() * 0.2) : (1.8 + Math.random() * 0.3);
-    const vy = -(h * launchHeight) * speedMult;
+
+    let vy = -(h * launchHeight) * speedMult;
+    // Standard launch logic (void now follows classic speed)
     const centerBias = (w / 2 - spawnX) * 0.15;
     const vx = (centerBias + (Math.random() - 0.5) * w * 0.3) * speedMult;
 
-    // Golden tokens (rare bonus)
-    const isGolden = !isBomb && Math.random() < 0.05;
-    const finalPoints = isGolden ? points * 5 : points;
+    const count = (state.mode === 'void') ? 2 : 1;
+    for (let c = 0; c < count; c++) {
+      const isGolden = !isBomb && (state.powerUps.midasTouch.active || Math.random() < 0.05);
+      const finalPoints = isGolden ? points * 5 : points;
 
-    state.tokens.push({
-      id: state.nextId++,
-      x: spawnX,
-      y: spawnY,
-      vx,
-      vy,
-      radius,
-      rotation: Math.random() * Math.PI * 2,
-      rotationSpeed: (Math.random() - 0.5) * 5,
-      tokenData,
-      points: finalPoints,
-      sliced: false,
-      isBomb,
-      type,
-      isGolden,
-    });
+      // slightly jitter spawn x,y, vx so they don't perfectly overlap
+      const jitterX = c === 1 ? (Math.random() - 0.5) * 50 : 0;
+      const jitterVx = c === 1 ? (Math.random() - 0.5) * 60 : 0;
+
+      const token: FlyingToken = {
+        id: state.nextId++,
+        x: spawnX + jitterX,
+        y: spawnY,
+        vx: vx + jitterVx,
+        vy,
+        radius,
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 5,
+        tokenData: tokenData,
+        points: finalPoints,
+        sliced: false,
+        isBomb,
+        type,
+        isGolden,
+      };
+
+      if (state.mode === 'timewarp' && !isBomb) {
+        token.generation = 1; // Split mode generation 1
+      }
+
+      state.tokens.push(token);
+    }
   }
 }
 
@@ -344,25 +432,24 @@ export function checkSlice(
 ): void {
   if (state.gameOver) return;
 
-  // Check for Singularity Collapse (Zen Mode)
+  // 1. Singularity Check (Zen Only)
   if (state.mode === 'zen' && state.singularity.active) {
     const s = state.singularity;
     if (lineIntersectsCircle(x1, y1, x2, y2, s.x, s.y, 45)) {
-      // COLLAPSE TRIGGERED!
       let collapsedCount = 0;
+      const radSq = SINGULARITY_RADIUS * SINGULARITY_RADIUS;
       for (const token of state.tokens) {
         if (token.sliced || token.isBomb) continue;
         const dx = token.x - s.x;
         const dy = token.y - s.y;
-        if (dx * dx + dy * dy < SINGULARITY_RADIUS * SINGULARITY_RADIUS) {
+        if (dx * dx + dy * dy < radSq) {
           token.sliced = true;
-          state.score += (token.points * 3); // 3x points for singularity collapse
+          state.score += (token.points * 3);
           state.tokensSliced++;
           collapsedCount++;
           spawnParticles(state, token.x, token.y, token.tokenData.color, 12);
         }
       }
-
       if (collapsedCount > 0) {
         state.soundQueue.push({ type: 'zenCollapse' });
         state.shakeAmount = 4;
@@ -370,20 +457,66 @@ export function checkSlice(
         state.comboTextTimer = 2.0;
         s.active = false;
         s.charge = 0;
-
-        // Massive center explosion
         spawnParticles(state, s.x, s.y, '#ffffff', 45);
-        spawnParticles(state, s.x, s.y, '#d8b4fe', 35); // Light purple
-        spawnParticles(state, s.x, s.y, '#9333ea', 25); // Deep purple
-        return; // Swiping through singularity collapses, doesn't slice tokens individually in this frame
+        return;
       }
     }
   }
 
+  // 2. Laser Check
+  if (state.mode === 'laser' && state.lasers) {
+    for (const l of state.lasers) {
+      if (l.active && l.type === 'danger') {
+        const distY1 = Math.abs(y1 - l.y);
+        const distY2 = Math.abs(y2 - l.y);
+        if (distY1 < 10 || distY2 < 10) {
+          state.lives--;
+          state.shakeAmount = 2.0;
+          state.soundQueue.push({ type: 'bomb' });
+          if (state.lives <= 0) {
+            state.gameOver = true;
+            state.soundQueue.push({ type: 'gameOver' });
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Token Loop
+  const newSplitTokens: FlyingToken[] = [];
+
   for (const token of state.tokens) {
     if (token.sliced) continue;
 
-    if (lineIntersectsCircle(x1, y1, x2, y2, token.x, token.y, token.radius)) {
+    const sliceRadius = state.powerUps.megaBlade.active ? token.radius * 2.8 : token.radius;
+    if (lineIntersectsCircle(x1, y1, x2, y2, token.x, token.y, sliceRadius)) {
+
+      // BRAIN GAME: TWIN MODE (void)
+      if (state.mode === 'void' && !token.isBomb) {
+        if (!state.twinTargetId) {
+          // Select token!
+          state.twinTargetId = token.tokenData.id;
+          state.comboText = 'MATCH!';
+          state.comboTextTimer = 1.0;
+        } else if (state.twinTargetId === token.tokenData.id) {
+          // Matched correctly!
+          state.twinTargetId = null;
+        } else {
+          // Wrong match!
+          state.lives--;
+          state.combo = 0;
+          state.shakeAmount = 2.5;
+          state.soundQueue.push({ type: 'bomb' });
+          state.twinTargetId = null;
+
+          if (state.lives <= 0) {
+            state.gameOver = true;
+            state.soundQueue.push({ type: 'gameOver' });
+          }
+          break; // Avoid slicing anything else this frame, abort cut
+        }
+      }
+
       token.sliced = true;
 
       const color = token.tokenData.color === '#000000' ? '#8B5CF6' : token.tokenData.color;
@@ -421,7 +554,7 @@ export function checkSlice(
         });
       }
 
-      const pCount = 35 + Math.floor(Math.random() * 20); // Massive particle burst for maximum juice
+      const pCount = 35 + Math.floor(Math.random() * 20);
       for (let pi = 0; pi < pCount; pi++) {
         const ang = Math.random() * Math.PI * 2;
         const spd = 250 + Math.random() * 450;
@@ -444,7 +577,7 @@ export function checkSlice(
         state.lives--;
         state.combo = 0;
         state.comboText = '';
-        state.shakeAmount = 2.5; // Greatly reduced shake for bombs
+        state.shakeAmount = 2.5;
         spawnParticles(state, token.x, token.y, '#FF4444', 8);
         spawnParticles(state, token.x, token.y, '#FF8800', 5);
         state.soundQueue.push({ type: 'bomb' });
@@ -454,28 +587,49 @@ export function checkSlice(
         }
       } else {
         const comboMult = Math.max(1, Math.floor(state.combo / 5) + 1);
-
         state.score += token.points * comboMult;
         state.combo++;
         state.tokensSliced++;
         state.bestCombo = Math.max(state.bestCombo, state.combo);
-
-        if (token.type === 'large') {
-          state.shakeAmount = 0.5; // Minimal shake
-        } else {
-          state.shakeAmount = 0.2; // Minimal shake
-        }
-
+        state.shakeAmount = token.type === 'large' ? 0.5 : 0.2;
         state.comboText = getComboText(state.combo);
         state.comboTextTimer = 1.5;
-
         state.soundQueue.push({ type: 'slice' });
-
         if (state.combo >= 3 && state.combo % 1 === 0) {
           state.soundQueue.push({ type: 'combo', combo: state.combo });
         }
+
+        // BRAIN GAME: SPLIT (timewarp)
+        if (state.mode === 'timewarp') {
+          const gen = token.generation || 1;
+          if (gen < 3) {
+            for (let i = -1; i <= 1; i += 2) {
+              newSplitTokens.push({
+                id: state.nextId++,
+                x: token.x + i * token.radius * 0.4,
+                y: token.y,
+                vx: token.vx + i * 180, // Spread outwards
+                vy: token.vy - 200,     // Pop upwards
+                radius: token.radius * 0.65,
+                rotation: token.rotation,
+                rotationSpeed: token.rotationSpeed * 2.5,
+                tokenData: token.tokenData,
+                points: token.points * 2,
+                sliced: false,
+                isBomb: false,
+                type: 'small',
+                isGolden: token.isGolden,
+                generation: gen + 1
+              });
+            }
+          }
+        }
       }
     }
+  }
+
+  if (newSplitTokens.length > 0) {
+    state.tokens.push(...newSplitTokens);
   }
 }
 
@@ -534,4 +688,16 @@ function getComboText(combo: number): string {
 
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+export function activatePowerUp(state: GameState, type: 'midas-touch' | 'mega-blade'): void {
+  if (state.gameOver) return;
+  if (type === 'midas-touch') {
+    state.powerUps.midasTouch.active = true;
+    state.powerUps.midasTouch.timeLeft = 10;
+  }
+  if (type === 'mega-blade') {
+    state.powerUps.megaBlade.active = true;
+    state.powerUps.megaBlade.timeLeft = 15;
+  }
 }

@@ -62,11 +62,18 @@ const SkinCard = ({ theme, active, onSelect }: SkinCardProps) => {
         <div className="relative z-10 w-full">
           {/* Preview Image - Compact */}
           <div className="relative w-full aspect-[16/10] rounded-[1.2rem] overflow-hidden mb-3 border border-white/5 group-hover:border-white/10 transition-all">
-            <img
-              src={theme.preview}
-              alt=""
-              className={`w-full h-full object-cover transition-all duration-1000 ${active ? 'scale-110' : 'group-hover:scale-105'}`}
-            />
+            {theme.preview ? (
+              <img
+                src={theme.preview}
+                alt=""
+                className={`w-full h-full object-cover transition-all duration-1000 ${active ? 'scale-110' : 'group-hover:scale-105'}`}
+              />
+            ) : (
+              <div
+                className={`w-full h-full transition-all duration-1000 ${active ? 'scale-110' : 'group-hover:scale-105'}`}
+                style={{ background: theme.cssBackground || theme.background }}
+              />
+            )}
 
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
 
