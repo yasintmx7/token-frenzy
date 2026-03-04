@@ -5,7 +5,7 @@ import GameOver from '@/components/game/GameOver';
 import { MintOverlay } from '@/components/game/MintOverlay';
 import { TrialTimer } from '@/components/game/TrialTimer';
 import { type GameMode } from '@/lib/gameEngine';
-import { updateProgressAfterGame, loadProgress, syncProgressToCloud } from '@/lib/storage';
+import { updateProgressAfterGame, loadProgress, syncProgressToCloud, saveProgress } from '@/lib/storage';
 import { BOARD_THEMES } from '@/lib/boardThemes';
 import { TOKEN_FRAMES } from '@/lib/tokenFrames';
 import { BLADE_SKINS } from '@/lib/bladeSkins';
@@ -54,7 +54,6 @@ const Game = () => {
   const [stats, setStats] = useState<GameStats | null>(null);
   const [progress, setProgress] = useState(loadProgress());
   const [gameKey, setGameKey] = useState(0);
-  const [isVertical, setIsVertical] = useState(() => window.innerHeight > window.innerWidth);
 
   const wallet = useNativeWallet();
   const [hasPass, setHasPass] = useState<boolean | null>(null);
@@ -80,7 +79,16 @@ const Game = () => {
         (asset.grouping || []).some((group: any) => group.group_value === GAME_PASS_COLLECTION_ADDRESS)
       ) ?? false;
       setHasPass(ownsPass);
-      if (ownsPass) { setIsLocked(false); setShowMintOverlay(false); }
+      if (ownsPass) {
+        const p = loadProgress();
+        if (!p.hasPremiumAccess) {
+          p.hasPremiumAccess = true;
+          saveProgress(p);
+          setProgress(p);
+        }
+        setIsLocked(false);
+        setShowMintOverlay(false);
+      }
     } catch (err) {
       console.error('Pass check failed:', err);
       setHasPass(false);
@@ -89,13 +97,11 @@ const Game = () => {
 
   useEffect(() => { checkOwnership(); }, [wallet.connected, wallet.walletAddress, checkOwnership]);
 
-  // FIX: Track remaining time in a ref so the interval callback always reads the latest value
-  // without re-creating the interval on every tick (which caused interval restart every second).
   const trialTimeRef = useRef(trialTime);
   trialTimeRef.current = trialTime;
 
   useEffect(() => {
-    if (screen !== 'playing' || hasPass !== false || trialTimeRef.current <= 0) return;
+    if (screen !== 'playing' || hasPass === true || progress.hasPremiumAccess || trialTimeRef.current <= 0) return;
     const timer = setInterval(() => {
       const next = trialTimeRef.current - 1;
       if (next <= 0) {
@@ -108,8 +114,7 @@ const Game = () => {
       }
     }, 1000);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, hasPass]); // Intentionally NOT including trialTime to avoid restarting the interval
+  }, [screen, hasPass]);
 
   const handleMintSuccess = useCallback(() => {
     setShowMintOverlay(false);
@@ -118,7 +123,7 @@ const Game = () => {
   }, [checkOwnership]);
 
   const [reviveStats, setReviveStats] = useState<{ score: number; tokensSliced: number; bestCombo: number } | null>(null);
-  const [sessionId, setSessionId] = useState(makeSessionId); // FIX: initial value so first game awards XP
+  const [sessionId, setSessionId] = useState(makeSessionId);
 
   const handleRevive = useCallback(() => {
     if (stats) {
@@ -135,7 +140,7 @@ const Game = () => {
     setReviveStats(null);
     setMode(selectedMode);
     setGameKey(prev => prev + 1);
-    setTrialTime(TRIAL_DURATION); // FIX: reset trial timer on each new game
+    setTrialTime(TRIAL_DURATION);
     setIsLocked(false);
     setScreen('playing');
     window.Android?.setState('playing');
@@ -146,7 +151,7 @@ const Game = () => {
     setSessionId(makeSessionId());
     setReviveStats(null);
     setGameKey(prev => prev + 1);
-    setTrialTime(TRIAL_DURATION); // FIX: reset trial timer on restart
+    setTrialTime(TRIAL_DURATION);
     setIsLocked(false);
     setScreen('playing');
     window.Android?.setState('playing');
@@ -156,7 +161,6 @@ const Game = () => {
     setStats(gameStats);
     updateProgressAfterGame(gameStats.score, gameStats.tokensSliced, gameStats.bestCombo);
 
-    // Auto sync to cloud after game if wallet is connected
     const walletAddr = window.Android?.getWalletAddress?.();
     if (walletAddr) {
       syncProgressToCloud(walletAddr);
@@ -176,12 +180,6 @@ const Game = () => {
   }, []);
 
   useEffect(() => {
-    const onResize = () => setIsVertical(window.innerHeight > window.innerWidth);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  useEffect(() => {
     window.__onNativeTxSuccess = (signature: string) => {
       console.log('Transaction success:', signature);
       const pendingStr = localStorage.getItem('pending-purchase');
@@ -190,12 +188,10 @@ const Game = () => {
           const pending = JSON.parse(pendingStr);
           const p = loadProgress();
 
-
           if (pending.type === 'revive') {
             p.revives = (p.revives || 0) + pending.qty;
           } else if (pending.type === 'bundle') {
-
-
+            p.hasPremiumAccess = true;
             BOARD_THEMES.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedBoards.includes(t.id)) p.ownedBoards.push(t.id); });
             TOKEN_FRAMES.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedFrames.includes(t.id)) p.ownedFrames.push(t.id); });
             BLADE_SKINS.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedBlades.includes(t.id)) p.ownedBlades.push(t.id); });
@@ -210,6 +206,7 @@ const Game = () => {
           syncProgressToCloud(window.Android?.getWalletAddress?.());
           setProgress(p);
           localStorage.removeItem('pending-purchase');
+          window.dispatchEvent(new Event('progress-updated'));
         } catch (e) {
           console.error('Failed to process pending purchase:', e);
         }
@@ -237,12 +234,9 @@ const Game = () => {
 
   return (
     <div className="w-full h-screen bg-black flex items-center justify-center overflow-hidden">
-      <div className={`relative transition-all duration-500 ${isVertical
-        ? 'h-full aspect-[9/16] max-h-screen overflow-hidden'
-        : 'w-full h-full'}`}
-      >
+      <div className="relative w-full h-full mx-auto max-w-full sm:max-w-md md:max-w-full transition-all duration-500 overflow-hidden">
         {screen === 'menu' && (
-          <MainMenu onStart={handleStart} initialTab={initialMenuTab} hasPass={hasPass} onRequestMint={() => setShowMintOverlay(true)} />
+          <MainMenu onStart={handleStart} initialTab={initialMenuTab} hasPass={hasPass || progress.hasPremiumAccess} onRequestMint={() => setShowMintOverlay(true)} />
         )}
         {screen === 'gameOver' && stats && (
           <GameOver
@@ -266,7 +260,7 @@ const Game = () => {
               initialStats={reviveStats || undefined}
               settings={progress.settings}
             />
-            {!hasPass && trialTime > 0 && <TrialTimer seconds={trialTime} />}
+            {!(hasPass || progress.hasPremiumAccess) && trialTime > 0 && <TrialTimer seconds={trialTime} />}
           </>
         )}
 

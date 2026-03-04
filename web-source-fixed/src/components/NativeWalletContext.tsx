@@ -106,41 +106,59 @@ export const NativeWalletProvider = ({ children }: { children: ReactNode }) => {
                 reject(new Error('Native bridge not available'));
                 return;
             }
-            // Set up one-time callbacks
+
+            const prevSuccess = window.__onNativeTxSuccess;
+            const prevError = window.__onNativeTxError;
+
             window.__onNativeTxSuccess = (signature: string) => {
-                delete window.__onNativeTxSuccess;
-                delete window.__onNativeTxError;
+                // Restore previous handlers for safety
+                window.__onNativeTxSuccess = prevSuccess;
+                window.__onNativeTxError = prevError;
+
+                // Call previous handler (like the one in Game.tsx) so it can process the purchase
+                if (prevSuccess) prevSuccess(signature);
+
                 resolve(signature);
             };
+
             window.__onNativeTxError = (error: string) => {
-                delete window.__onNativeTxSuccess;
-                delete window.__onNativeTxError;
+                window.__onNativeTxSuccess = prevSuccess;
+                window.__onNativeTxError = prevError;
+
+                if (prevError) prevError(error);
                 reject(new Error(error));
             };
+
             window.Android.sendSol(to, amount);
         });
     }, []);
 
-    /**
-     * Mint Game Pass — pays 0.0025 SOL + mints NFT via Helius API.
-     * Returns a promise that resolves with the mint result.
-     */
     const mintGamePass = useCallback((): Promise<string> => {
         return new Promise((resolve, reject) => {
             if (!window.Android?.mintGamePass) {
                 reject(new Error('Native bridge not available'));
                 return;
             }
+
+            const prevSuccess = window.__onNativeMintSuccess;
+            const prevError = window.__onNativeMintError;
+
             window.__onNativeMintSuccess = (result: string) => {
-                delete window.__onNativeMintSuccess;
-                delete window.__onNativeMintError;
+                window.__onNativeMintSuccess = prevSuccess;
+                window.__onNativeMintError = prevError;
+
+                if (prevSuccess) prevSuccess(result);
                 resolve(result);
             };
+
             window.__onNativeMintError = (error: string) => {
-                delete window.__onNativeMintSuccess;
-                delete window.__onNativeMintError;
+                window.__onNativeMintSuccess = prevSuccess;
+                window.__onNativeMintError = prevError;
+
+                if (prevError) prevError(error);
                 reject(new Error(error));
             };
+
             window.Android.mintGamePass();
         });
     }, []);

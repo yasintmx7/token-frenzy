@@ -30,6 +30,7 @@ export interface PlayerProgress {
   };
   lastPlayedDate: string;
   dailyStreak: number;
+  hasPremiumAccess: boolean;
 }
 
 export interface LeaderboardEntry {
@@ -94,6 +95,7 @@ export function loadProgress(): PlayerProgress {
         },
         lastPlayedDate: parsed.lastPlayedDate ?? '',
         dailyStreak: parsed.dailyStreak ?? 0,
+        hasPremiumAccess: parsed.hasPremiumAccess ?? false,
       };
 
       // Persist migration so it only runs once
@@ -131,6 +133,7 @@ export function loadProgress(): PlayerProgress {
     },
     lastPlayedDate: '',
     dailyStreak: 0,
+    hasPremiumAccess: false,
   };
 }
 

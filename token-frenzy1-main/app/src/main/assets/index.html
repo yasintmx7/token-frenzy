@@ -2,14 +2,44 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Token Frenzy - Crypto Slicing Game</title>
     <meta name="description" content="A fast, satisfying slicing game where you swipe to slice flying cryptocurrency tokens. Inspired by Fruit Ninja with a crypto twist!">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="./assets/index-JnBOoo_D.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-KfH9NTRx.css">
+    <style>
+      html, body {
+        margin: 0; padding: 0;
+        overscroll-behavior-y: none !important;
+        -webkit-tap-highlight-color: transparent;
+        -moz-user-select: none;
+             user-select: none;
+        -webkit-user-select: none;
+        touch-action: manipulation;
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      #root {
+        height: 100%;
+        width: 100%;
+        overflow-x: hidden;
+      }
+      * {
+        -webkit-touch-callout: none;
+      }
+    </style>
+    <script>
+      function setVh() {
+        document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
+      }
+      setVh();
+      window.addEventListener('resize', setVh);
+    </script>
+    <script type="module" crossorigin src="./assets/index-CharOlyI.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BL9ZBvS3.css">
   </head>
   <body>
     <div id="root"></div>

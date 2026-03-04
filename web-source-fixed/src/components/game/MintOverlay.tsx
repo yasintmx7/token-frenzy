@@ -10,10 +10,9 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
     const { connected, connecting, connect, mintGamePass } = useNativeWallet();
     const [status, setStatus] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const isMintingRef = useRef(false); // Prevent double-taps at the JS layer too
+    const isMintingRef = useRef(false);
 
     const handleMint = async () => {
-        // Prevent duplicate requests
         if (isMintingRef.current || isLoading || !connected) return;
         isMintingRef.current = true;
 
@@ -21,12 +20,10 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
             setIsLoading(true);
             setStatus("Opening wallet...");
 
-            // Native call: pays 0.013 SOL + mints NFT via Helius
             const result = await mintGamePass();
             console.log('[MintOverlay] Mint result:', result);
 
             setStatus("Game Pass minted! Unlocking game...");
-            // Give user time to read the success message
             setTimeout(() => {
                 onSuccess();
             }, 1500);
@@ -55,26 +52,32 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '2rem',
+            padding: '1rem',
             textAlign: 'center'
         }}>
             <div style={{
                 maxWidth: '400px',
-                padding: '2.5rem',
+                width: '100%',
+                maxHeight: '100%',
+                overflowY: 'auto',
+                padding: '2rem 1.5rem',
                 backgroundColor: '#111827',
                 borderRadius: '24px',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-            }}>
+                display: 'flex',
+                flexDirection: 'columm',
+            }} className="flex-col">
                 <div style={{
-                    width: '120px',
-                    height: '180px',
+                    width: '100px',
+                    height: '150px',
                     margin: '0 auto 1.5rem',
                     borderRadius: '12px',
                     overflow: 'hidden',
                     boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
-                    background: '#1f2937'
+                    background: '#1f2937',
+                    flexShrink: 0
                 }}>
                     <img
                         src="https://gateway.pinata.cloud/ipfs/bafybeielmvw7uejrf4e3qx7zteojlkjab3jox62x22cnodbghquzbv2lva"
@@ -83,40 +86,40 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                     />
                 </div>
 
-                <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: 'white', marginBottom: '0.5rem', letterSpacing: '-0.025em' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: 'white', marginBottom: '0.5rem', letterSpacing: '-0.025em' }}>
                     TRIAL ENDED
                 </h2>
-                <p style={{ color: '#9ca3af', marginBottom: '2rem', lineHeight: '1.5', fontSize: '0.9rem' }}>
+                <p style={{ color: '#9ca3af', marginBottom: '1.5rem', lineHeight: '1.5', fontSize: '0.85rem' }}>
                     Mint a permanent <strong>Game Pass NFT</strong> to continue playing and save your progress.
                 </p>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'center', flexShrink: 0 }}>
                     {!connected ? (
                         <button
                             onClick={connect}
                             disabled={connecting}
                             style={{
                                 width: '100%',
-                                padding: '16px',
+                                padding: '14px',
                                 background: 'white',
                                 color: 'black',
                                 border: 'none',
                                 borderRadius: '14px',
                                 fontWeight: '900',
-                                fontSize: '1rem',
+                                fontSize: '0.9rem',
                                 cursor: connecting ? 'default' : 'pointer',
                                 transition: 'all 0.2s',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                gap: '10px',
+                                gap: '8px',
                                 opacity: connecting ? 0.7 : 1,
                             }}
                         >
                             {connecting ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
+                                <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
-                                <Wallet className="w-5 h-5" />
+                                <Wallet className="w-4 h-4" />
                             )}
                             {connecting ? 'CONNECTING...' : 'CONNECT WALLET'}
                         </button>
@@ -126,7 +129,7 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                             disabled={isLoading}
                             style={{
                                 width: '100%',
-                                padding: '16px',
+                                padding: '14px',
                                 background: isLoading
                                     ? 'linear-gradient(135deg, #6b5798 0%, #a03ab8 100%)'
                                     : 'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)',
@@ -134,7 +137,7 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                                 border: 'none',
                                 borderRadius: '14px',
                                 fontWeight: '900',
-                                fontSize: '1.1rem',
+                                fontSize: '0.95rem',
                                 cursor: isLoading ? 'default' : 'pointer',
                                 transition: 'all 0.2s',
                                 boxShadow: isLoading ? 'none' : '0 10px 15px -3px rgba(139, 92, 246, 0.3)',
@@ -142,10 +145,10 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                gap: '10px',
+                                gap: '8px',
                             }}
                         >
-                            {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
+                            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                             {isLoading
                                 ? (status.includes('Opening') ? 'OPENING WALLET...' : 'WAITING FOR CONFIRMATION...')
                                 : 'MINT PASS (◎ 0.013 SOL)'}
@@ -155,13 +158,13 @@ export const MintOverlay = ({ onSuccess }: MintOverlayProps) => {
 
                 {status && (
                     <p style={{
-                        marginTop: '1.5rem',
+                        marginTop: '1rem',
                         color: status.includes('Error') || status.includes('cancelled') || status.includes('failed')
                             ? '#f87171'
                             : status.includes('minted') || status.includes('Unlocking')
                                 ? '#34d399'
                                 : '#a78bfa',
-                        fontSize: '0.9rem',
+                        fontSize: '0.8rem',
                         fontWeight: '500'
                     }}>
                         {status}
