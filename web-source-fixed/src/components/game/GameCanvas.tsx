@@ -94,6 +94,12 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false, 
 
   const perfData = useRef({ lastTime: 0, drops: 0, frameCount: 0, fps: 60, isLagging: false });
   const recentFrames = useRef<number[]>([]);
+  // Cache ctx to avoid calling getContext every frame
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  // Cache bgAccent string to avoid string rebuilding every frame
+  const bgAccentCacheRef = useRef('');
+  // Snapshot progress at game start — avoids localStorage reads every frame
+  const progressSnapshotRef = useRef(loadProgress());
 
   const [showPerf, setShowPerf] = useState(false);
   const [muted, setMuted] = useState(isMuted());
@@ -118,16 +124,15 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false, 
     const canvas = canvasRef.current;
     if (!canvas || !canvas.parentElement) return;
     const dpr = window.devicePixelRatio || 1;
-
-    // Use parent container dimensions instead of window to support aspect ratio scaling
     const w = canvas.parentElement.clientWidth;
     const h = canvas.parentElement.clientHeight;
-
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     sizeRef.current = { width: w, height: h };
+    // Cache ctx on resize too
+    ctxRef.current = canvas.getContext('2d');
   }, []);
 
   useEffect(() => {
@@ -320,7 +325,8 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false, 
 
       const canvas = canvasRef.current;
       if (!canvas) { rafId = requestAnimationFrame(loop); return; }
-      const ctx = canvas.getContext('2d');
+      // Use cached ctx — avoid calling getContext every frame
+      const ctx = ctxRef.current || canvas.getContext('2d');
       if (!ctx) { rafId = requestAnimationFrame(loop); return; }
 
       const { width, height } = sizeRef.current;
@@ -434,9 +440,13 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false, 
         }
       }
 
-      // Update Theme Background
+      // Update Theme Background — only rebuild string when theme changes
       if (bgAccentRef.current) {
-        bgAccentRef.current.style.background = `radial-gradient(circle at 50% 50%, ${boardThemeRef.current.background}55 0%, transparent 70%)`;
+        const newBg = `radial-gradient(circle at 50% 50%, ${boardThemeRef.current.background}55 0%, transparent 70%)`;
+        if (bgAccentCacheRef.current !== newBg) {
+          bgAccentCacheRef.current = newBg;
+          bgAccentRef.current.style.background = newBg;
+        }
       }
 
       // Drain sound queue
@@ -562,7 +572,7 @@ const GameCanvas = ({ mode, onGameOver, onRestart, onExit, forcePaused = false, 
 
         {/* POWER-UP HUD */}
         <PowerUpHud
-          progress={loadProgress()}
+          progress={progressSnapshotRef.current}
           onActivate={(type) => {
             if (usePowerUp(type)) {
               activatePowerUp(stateRef.current, type);
@@ -1370,38 +1380,50 @@ function drawBladeTrail(ctx: CanvasRenderingContext2D, trail: SlicePoint[], skin
   const maxAge = 180;
   const megaMult = state.powerUps.megaBlade.active ? 2.5 : 1.0;
 
+  // Batch outer glow pass — single path for all segments
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = skin.trail.glow.replace('{a}', '0.5');
+
   for (let i = 1; i < trail.length; i++) {
-    const p1 = trail[i - 1];
     const p2 = trail[i];
     const age = now - p2.time;
     if (age > maxAge) continue;
-
     const life = 1 - age / maxAge;
-    const taper = (i / trail.length);
+    const taper = i / trail.length;
     const w = (life * taper * 12 + 1) * megaMult;
+    const p1 = trail[i - 1];
 
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(p2.x, p2.y);
-
-    // Outer glow pass
     ctx.shadowBlur = w * 2;
-    ctx.shadowColor = skin.trail.glow.replace('{a}', '0.5');
     ctx.strokeStyle = skin.trail.outer.replace('{a}', String(life * 0.3));
     ctx.lineWidth = w * 2.5;
     ctx.stroke();
+  }
 
-    // Inner glow pass
-    ctx.shadowBlur = 0;
+  // Inner glow pass (no shadow needed)
+  ctx.shadowBlur = 0;
+  for (let i = 1; i < trail.length; i++) {
+    const p2 = trail[i];
+    const age = now - p2.time;
+    if (age > maxAge) continue;
+    const life = 1 - age / maxAge;
+    const taper = i / trail.length;
+    const w = (life * taper * 12 + 1) * megaMult;
+    const p1 = trail[i - 1];
+
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
     ctx.strokeStyle = skin.trail.glow.replace('{a}', String(life * 0.8));
     ctx.lineWidth = w;
     ctx.stroke();
-
-    ctx.restore();
   }
+
+  ctx.restore();
 }
 
 function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]): void {

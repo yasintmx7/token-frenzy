@@ -99,6 +99,11 @@
   .max-h-screen {
     max-height: 100dvh !important;
   }
+
+  /* Safe area padding utilities */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /* Glassmorphism utility */

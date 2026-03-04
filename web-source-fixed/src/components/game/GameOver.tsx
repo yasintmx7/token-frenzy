@@ -146,7 +146,7 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center p-4 sm:p-6"
+    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 sm:p-6"
       style={{ background: boardTheme.cssBackground || boardTheme.background }}>
       {boardTheme.backgroundImage && (
         <img src={boardTheme.backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -154,9 +154,10 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
       <div className="absolute inset-0 bg-background/50" />
 
       <div
-        className="relative z-10 w-full max-w-[360px] max-h-[92vh] flex flex-col overflow-hidden rounded-[24px] animate-scale-in shadow-2xl"
+        className="relative z-10 w-full max-w-[360px] max-h-[88vh] flex flex-col overflow-hidden rounded-[24px] animate-scale-in shadow-2xl"
         style={{
-          zoom: 0.9,
+          transform: 'scale(0.96)',
+          transformOrigin: 'center',
           background: 'linear-gradient(180deg, #140b2e 0%, #0b071a 100%)',
           backdropFilter: 'blur(10px)',
           border: '1px solid rgba(255, 255, 255, 0.08)',

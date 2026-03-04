@@ -497,7 +497,7 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
         )}
 
         {/* SHOP TAB — scrollable, landscape fixes */}
-        {activeTab === 'shop' && <ShopManager />}
+        {activeTab === 'shop' && <ShopManager hasPass={hasPass} />}
 
         {/* RANK TAB */}
         {activeTab === 'rank' && (
@@ -543,8 +543,8 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
       </div>
 
       {/* ── Bottom navigation ── */}
-      <div className="absolute bottom-4 left-0 right-0 z-50 flex justify-center px-4">
-        <div className="flex items-center glass-panel-strong rounded-2xl overflow-hidden">
+      <div className="absolute bottom-0 left-0 right-0 z-50 flex justify-center px-3 pb-4" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+        <div className="flex items-center glass-panel-strong rounded-2xl overflow-hidden w-full max-w-sm">
           {([
             { id: 'rank' as BottomTab, icon: Trophy, label: 'RANK' },
             { id: 'play' as BottomTab, icon: Gamepad2, label: 'PLAY' },
@@ -557,14 +557,14 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className="flex flex-col items-center gap-0.5 px-4 py-3 transition-all duration-200"
+                className="flex-1 flex flex-col items-center gap-0.5 py-3 transition-all duration-200 min-w-0"
                 style={{
                   background: isActive ? 'rgba(255,255,255,0.1)' : undefined,
                   color: isActive ? 'white' : 'hsla(0,0%,100%,0.4)',
                 }}
               >
-                <tab.icon className="w-5 h-5" />
-                <span className="text-[9px] font-display font-bold tracking-wider">{tab.label}</span>
+                <tab.icon className="w-5 h-5 flex-shrink-0" />
+                <span className="text-[9px] font-display font-bold tracking-wider truncate w-full text-center">{tab.label}</span>
               </button>
             );
           })}
@@ -906,10 +906,10 @@ function ProfileDashboard({ progress, onOpenLegal, isLandscape, hasPass }: {
   );
 }
 
-function ShopManager() {
+function ShopManager({ hasPass }: { hasPass?: boolean | null }) {
   const [subTab, setSubTab] = useState<'arena' | 'frames' | 'trails' | 'upgrades'>('arena');
   const [progress, setProgress] = useState(loadProgress());
-  const hasPass = progress.hasAcceptedTerms; // Simulating pass for now or use real state
+  const isPassHolder = hasPass === true;
 
   // Refresh progress after purchase
   const refresh = () => setProgress(loadProgress());
@@ -977,8 +977,8 @@ function ShopManager() {
       <div className="flex-1 overflow-y-auto px-4 custom-scrollbar pb-32">
         {subTab === 'arena' && (
           <div className="grid grid-cols-2 gap-3">
-            {BOARD_THEMES.map((theme, idx) => {
-              const isOwned = hasPass || progress.ownedBoards.includes(theme.id);
+            {BOARD_THEMES.map((theme) => {
+              const isOwned = isPassHolder || progress.ownedBoards.includes(theme.id);
               const isSelected = theme.id === progress.selectedBoard;
               return (
                 <ShopItem
@@ -1001,7 +1001,7 @@ function ShopManager() {
         {subTab === 'frames' && (
           <div className="grid grid-cols-2 gap-3">
             {TOKEN_FRAMES.map(f => {
-              const isOwned = hasPass || progress.ownedFrames.includes(f.id);
+              const isOwned = isPassHolder || progress.ownedFrames.includes(f.id);
               const isSelected = progress.selectedFrame === f.id;
               return (
                 <ShopItem
@@ -1023,7 +1023,7 @@ function ShopManager() {
         {subTab === 'trails' && (
           <div className="grid grid-cols-2 gap-3">
             {BLADE_SKINS.map(b => {
-              const isOwned = hasPass || progress.ownedBlades.includes(b.id);
+              const isOwned = isPassHolder || progress.ownedBlades.includes(b.id);
               const isSelected = progress.selectedBlade === b.id;
               return (
                 <ShopItem
