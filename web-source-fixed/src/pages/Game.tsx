@@ -5,7 +5,10 @@ import GameOver from '@/components/game/GameOver';
 import { MintOverlay } from '@/components/game/MintOverlay';
 import { TrialTimer } from '@/components/game/TrialTimer';
 import { type GameMode } from '@/lib/gameEngine';
-import { updateProgressAfterGame, loadProgress } from '@/lib/storage';
+import { updateProgressAfterGame, loadProgress, syncProgressToCloud } from '@/lib/storage';
+import { BOARD_THEMES } from '@/lib/boardThemes';
+import { TOKEN_FRAMES } from '@/lib/tokenFrames';
+import { BLADE_SKINS } from '@/lib/bladeSkins';
 import { SOLANA_RPC_URL, GAME_PASS_COLLECTION_ADDRESS } from '@/lib/solanaConfig';
 import { useNativeWallet } from '@/components/NativeWalletContext';
 
@@ -152,6 +155,13 @@ const Game = () => {
   const handleGameOver = useCallback((gameStats: GameStats) => {
     setStats(gameStats);
     updateProgressAfterGame(gameStats.score, gameStats.tokensSliced, gameStats.bestCombo);
+
+    // Auto sync to cloud after game if wallet is connected
+    const walletAddr = window.Android?.getWalletAddress?.();
+    if (walletAddr) {
+      syncProgressToCloud(walletAddr);
+    }
+
     setProgress(loadProgress());
     setScreen('gameOver');
     window.Android?.setState('gameover');
@@ -172,6 +182,45 @@ const Game = () => {
   }, []);
 
   useEffect(() => {
+    window.__onNativeTxSuccess = (signature: string) => {
+      console.log('Transaction success:', signature);
+      const pendingStr = localStorage.getItem('pending-purchase');
+      if (pendingStr) {
+        try {
+          const pending = JSON.parse(pendingStr);
+          const p = loadProgress();
+
+
+          if (pending.type === 'revive') {
+            p.revives = (p.revives || 0) + pending.qty;
+          } else if (pending.type === 'bundle') {
+
+
+            BOARD_THEMES.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedBoards.includes(t.id)) p.ownedBoards.push(t.id); });
+            TOKEN_FRAMES.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedFrames.includes(t.id)) p.ownedFrames.push(t.id); });
+            BLADE_SKINS.filter((t: any) => t.tier === 'sol').forEach((t: any) => { if (!p.ownedBlades.includes(t.id)) p.ownedBlades.push(t.id); });
+          } else if (pending.itemId) {
+            if (pending.type === 'board' && !p.ownedBoards.includes(pending.itemId)) { p.ownedBoards.push(pending.itemId); p.selectedBoard = pending.itemId; }
+            else if (pending.type === 'frame' && !p.ownedFrames.includes(pending.itemId)) { p.ownedFrames.push(pending.itemId); p.selectedFrame = pending.itemId; }
+            else if (pending.type === 'blade' && !p.ownedBlades.includes(pending.itemId)) { p.ownedBlades.push(pending.itemId); p.selectedBlade = pending.itemId; }
+            else if (pending.type === 'avatar' && !p.ownedAvatars.includes(pending.itemId)) { p.ownedAvatars.push(pending.itemId); p.selectedAvatar = pending.itemId; }
+          }
+
+          localStorage.setItem('token-frenzy-progress', JSON.stringify(p));
+          syncProgressToCloud(window.Android?.getWalletAddress?.());
+          setProgress(p);
+          localStorage.removeItem('pending-purchase');
+        } catch (e) {
+          console.error('Failed to process pending purchase:', e);
+        }
+      }
+    };
+
+    window.__onNativeTxError = (error: string) => {
+      console.error('Transaction error:', error);
+      localStorage.removeItem('pending-purchase');
+    };
+
     window.handleAndroidBack = () => {
       if (screen === 'playing') {
         window.onGameBack ? window.onGameBack() : handleMenu('play');
@@ -179,7 +228,11 @@ const Game = () => {
         handleMenu('play');
       }
     };
-    return () => { window.handleAndroidBack = undefined; };
+    return () => {
+      window.handleAndroidBack = undefined;
+      window.__onNativeTxSuccess = undefined;
+      window.__onNativeTxError = undefined;
+    };
   }, [screen, handleMenu]);
 
   return (

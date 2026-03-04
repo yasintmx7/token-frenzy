@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Zap, Flame, Waves, Gamepad2, Trophy, User, ShoppingBag,
   Lock, Coins, Shield as ShieldIcon, Star, Sparkles,
@@ -7,18 +7,21 @@ import {
   FileText, ChevronRight, Check, X, Smile, Ghost, Bot,
   Settings, Volume2, Smartphone, Cpu, Trash2, Package, Sword
 } from 'lucide-react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useWalletModal } from '@solana/wallet-adapter-react-ui';
+import {
+  ClassicIcon, FrenzyIcon, ChillIcon, SplitIcon, TwinIcon, LaserIcon
+} from './GameModeIcons';
+import { useNativeWallet } from '@/components/NativeWalletContext';
 import { type GameMode } from '@/lib/gameEngine';
 import {
-  loadProgress, setSelectedBoard, setSelectedBlade, setSelectedFrame,
-  buyFrame, buyBlade, buyBoard, buyRevive, buyRevives, buyPowerUp, shortenAddress,
-  saveProfile, saveSettings, resetProgress, getCloudProgress, restoreFromCloud, type PlayerProgress
+  loadProgress, setSelectedBoard, setSelectedBlade, setSelectedFrame, setSelectedAvatar,
+  buyFrame, buyBlade, buyBoard, buyAvatar, buyRevive, buyRevives, buyPowerUp, shortenAddress,
+  saveProfile, saveSettings, resetProgress, getCloudProgress, restoreFromCloud, syncProgressToCloud, type PlayerProgress
 } from '@/lib/storage';
 import { computeLevelFromTotalXp, XP_CONFIG } from '@/lib/xp';
 import { BOARD_THEMES } from '@/lib/boardThemes';
 import { BLADE_SKINS, type BladeSkin } from '@/lib/bladeSkins';
 import { TOKEN_FRAMES, type TokenFrame } from '@/lib/tokenFrames';
+import { AVATARS, getAvatarById } from '@/lib/avatars';
 import { setSFXEnabled, setMusicEnabled, updateMusic, resumeAudio, playSlice } from '@/lib/soundEngine';
 import BoardSkinSelector from './BoardSkinSelector';
 import { Leaderboard } from './Leaderboard';
@@ -40,7 +43,7 @@ function TrailPreview({ skin }: { skin: BladeSkin }) {
   );
 }
 
-// ─── Token Frame Preview (Animated Canvas) ───────────────────────────────────
+// â”€â”€â”€ Token Frame Preview (Animated Canvas) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function FramePreview({ frame }: { frame: TokenFrame }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>();
@@ -279,7 +282,7 @@ const modes: { id: GameMode; title: string; desc: string; icon: React.ReactNode;
     id: 'classic',
     title: 'CLASSIC',
     desc: 'Stable spawns + combos',
-    icon: <Zap className="w-8 h-8" />,
+    icon: <ClassicIcon size={32} />,
     neonColor: 'hsl(38, 100%, 60%)',
     glowHsl: '38, 100%, 60%',
   },
@@ -287,7 +290,7 @@ const modes: { id: GameMode; title: string; desc: string; icon: React.ReactNode;
     id: 'frustration',
     title: 'FRENZY',
     desc: 'Fast spawns + bombs',
-    icon: <Flame className="w-8 h-8" />,
+    icon: <FrenzyIcon size={32} />,
     neonColor: 'hsl(15, 100%, 60%)',
     glowHsl: '15, 100%, 60%',
   },
@@ -295,7 +298,7 @@ const modes: { id: GameMode; title: string; desc: string; icon: React.ReactNode;
     id: 'zen',
     title: 'CHILL',
     desc: 'Relax gameplay',
-    icon: <Waves className="w-8 h-8" />,
+    icon: <ChillIcon size={32} />,
     neonColor: 'hsl(185, 100%, 60%)',
     glowHsl: '185, 100%, 60%',
   },
@@ -303,7 +306,7 @@ const modes: { id: GameMode; title: string; desc: string; icon: React.ReactNode;
     id: 'timewarp',
     title: 'SPLIT',
     desc: 'Multiply on hit',
-    icon: <Activity className="w-8 h-8" />,
+    icon: <SplitIcon size={32} />,
     neonColor: 'hsl(280, 100%, 65%)',
     glowHsl: '280, 100%, 65%',
   },
@@ -311,15 +314,15 @@ const modes: { id: GameMode; title: string; desc: string; icon: React.ReactNode;
     id: 'void',
     title: 'TWIN',
     desc: 'Match Pairs',
-    icon: <CircleDashed className="w-8 h-8" />,
+    icon: <TwinIcon size={32} />,
     neonColor: 'hsl(140, 80%, 50%)',
-    glowHsl: '280, 80%, 50%',
+    glowHsl: '140, 80%, 50%',
   },
   {
     id: 'laser',
     title: 'LASER',
     desc: '4x Death Beams',
-    icon: <Target className="w-8 h-8" />,
+    icon: <LaserIcon size={32} />,
     neonColor: 'hsl(0, 100%, 60%)',
     glowHsl: '0, 100%, 60%',
   },
@@ -331,23 +334,22 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
   const [activeTab, setActiveTab] = useState<BottomTab>(initialTab);
   const [selectedBoardId, setSelectedBoardId] = useState(progress.selectedBoard);
   const [legalModal, setLegalModal] = useState<{ isOpen: boolean; type: 'privacy' | 'terms' }>({ isOpen: false, type: 'privacy' });
-  const { connected, publicKey } = useWallet();
-  const { setVisible } = useWalletModal();
+  const { connected, walletAddress, connect } = useNativeWallet();
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [cloudData, setCloudData] = useState<PlayerProgress | null>(null);
 
   useEffect(() => {
-    if (connected && publicKey && progress.gamesPlayed === 0) {
+    if (connected && walletAddress && progress.gamesPlayed === 0) {
       const checkCloud = async () => {
-        const data = await getCloudProgress(publicKey.toString());
-        if (data && data.totalScore > 0) {
+        const data = await getCloudProgress(walletAddress);
+        if (data && (data.totalScore > 0 || data.ownedBoards.length > 3)) {
           setCloudData(data);
           setShowRestorePrompt(true);
         }
       };
       checkCloud();
     }
-  }, [connected, publicKey, progress.gamesPlayed]);
+  }, [connected, walletAddress, progress.gamesPlayed]);
 
   const handleRestore = () => {
     if (cloudData) {
@@ -386,7 +388,7 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
       // On play/home tab: no sub-nav back needed
       window.handleAndroidBack = undefined;
     } else {
-      // On sub-tab: report subtab state and register back → return to play tab
+      // On sub-tab: report subtab state and register back â†’ return to play tab
       window.Android?.setState('subtab');
       window.handleAndroidBack = () => {
         setActiveTab('play');
@@ -408,7 +410,7 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
       <div className={`absolute inset-0 transition-all duration-700 ${activeTab === 'shop' ? 'bg-black/80' : 'bg-black/55'}`} />
       <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black via-black/70 to-transparent pointer-events-none" />
 
-      {/* ── Top bar ── */}
+      {/* â”€â”€ Top bar â”€â”€ */}
       <div className="relative z-10 flex items-center justify-between px-4 pt-5 pb-2 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="glass-panel-strong rounded-full px-4 py-2 flex items-center gap-3 border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.2)] animate-fade-in flex-shrink-0">
@@ -423,37 +425,37 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
         </div>
       </div>
 
-      {/* ── Main scrollable content ── */}
+      {/* â”€â”€ Main scrollable content â”€â”€ */}
       <div className="flex-1 flex flex-col relative z-10 overflow-hidden">
 
         {/* PLAY TAB */}
         {activeTab === 'play' && (
-          <div className={`flex-1 flex ${isLandscape ? 'flex-row items-center justify-center px-10 gap-10' : 'flex-col items-center justify-center px-5 gap-5'}`}>
+          <div className={`flex-1 flex ${isLandscape ? 'flex-row items-center justify-center px-10 gap-10' : 'flex-col items-center justify-center px-5 gap-4'}`}>
 
-            {/* Left side (Landscape) / Top (Portrait): Title & Play Button */}
-            <div className={`flex flex-col items-center justify-center gap-4 ${isLandscape ? 'flex-[0.8]' : ''}`}>
+            {/* Left side (Landscape) / Top (Portrait): Title */}
+            <div className={`flex flex-col items-center gap-2 ${isLandscape ? 'flex-[0.8]' : '-mt-14 mb-4'}`}>
               {/* Title */}
-              <div className="text-center select-none animate-fade-in">
+              <div className="text-center select-none animate-fade-in origin-bottom">
                 <h1 className="font-display font-black tracking-wider leading-none">
-                  <span className={`block ${isLandscape ? 'text-4xl' : 'text-5xl'} bg-gradient-to-b from-white via-purple-300 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_30px_hsla(280,100%,65%,0.6)]`}>
+                  <span className={`block ${isLandscape ? 'text-4xl' : 'text-6xl'} bg-gradient-to-b from-white via-purple-300 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_30px_hsla(280,100%,65%,0.6)]`}>
                     TOKEN
                   </span>
-                  <span className={`block ${isLandscape ? 'text-4xl' : 'text-5xl'} bg-gradient-to-b from-purple-200 via-amber-300 to-amber-500 bg-clip-text text-transparent drop-shadow-[0_0_30px_hsla(38,100%,60%,0.5)] -mt-1`}>
+                  <span className={`block ${isLandscape ? 'text-4xl' : 'text-6xl'} bg-gradient-to-b from-purple-200 via-amber-300 to-amber-500 bg-clip-text text-transparent drop-shadow-[0_0_30px_hsla(38,100%,60%,0.5)] -mt-2`}>
                     FRENZY
                   </span>
                 </h1>
               </div>
 
-              {/* Play button */}
+              {/* Play button — centered in portrait, below title in landscape */}
               <button
                 onClick={handlePlayClick}
-                className={`group relative animate-fade-in btn-premium ${isLandscape ? 'mt-2' : 'mt-1'}`}
+                className="group relative animate-fade-in btn-premium mt-6 hover:scale-105 active:scale-95 transition-transform"
               >
-                <div className="absolute -inset-1.5 rounded-full opacity-50 blur-lg group-hover:opacity-70 transition-opacity"
+                <div className="absolute -inset-2 rounded-full opacity-50 blur-xl group-hover:opacity-80 transition-opacity"
                   style={{ background: 'linear-gradient(135deg, hsl(var(--neon-purple)), hsl(var(--neon-pink)), hsl(var(--neon-cyan)))' }} />
-                <div className="relative flex items-center gap-2 px-8 py-3 rounded-full glass-panel-strong">
-                  <Gamepad2 className="w-5 h-5 text-foreground/80" />
-                  <span className="text-sm font-display font-bold tracking-[0.2em] text-foreground">
+                <div className="relative flex items-center gap-4 px-14 py-5 rounded-full glass-panel-strong shadow-[0_0_30px_rgba(168,85,247,0.4)] border-white/10">
+                  <Gamepad2 className="w-6 h-6 text-foreground/80" />
+                  <span className="text-xl font-display font-black tracking-[0.25em] text-foreground uppercase">
                     PLAY
                   </span>
                 </div>
@@ -496,8 +498,14 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
           </div>
         )}
 
-        {/* SHOP TAB — scrollable, landscape fixes */}
-        {activeTab === 'shop' && <ShopManager hasPass={hasPass} />}
+        {/* SHOP TAB â€” scrollable, landscape fixes */}
+        {activeTab === 'shop' && (
+          <ShopManager
+            hasPass={hasPass}
+            onRefresh={() => setProgress(loadProgress())}
+            walletAddress={walletAddress || undefined}
+          />
+        )}
 
         {/* RANK TAB */}
         {activeTab === 'rank' && (
@@ -514,7 +522,7 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
           </div>
         )}
 
-        {/* PROFILE TAB — fits one screen */}
+        {/* PROFILE TAB â€” fits one screen */}
         {activeTab === 'profile' && (
           <div className="flex-1 overflow-hidden px-4 pt-3 pb-2 flex flex-col justify-center animate-fade-in">
             <ProfileDashboard
@@ -522,6 +530,8 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
               onOpenLegal={(type) => setLegalModal({ isOpen: true, type })}
               isLandscape={isLandscape}
               hasPass={hasPass}
+              onRequestMint={onRequestMint}
+              onRefresh={() => setProgress(loadProgress())}
             />
           </div>
         )}
@@ -542,13 +552,13 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
         )}
       </div>
 
-      {/* ── Bottom navigation ── */}
+      {/* â”€â”€ Bottom navigation â”€â”€ */}
       <div className="absolute bottom-0 left-0 right-0 z-50 flex justify-center px-3 pb-4" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
         <div className="flex items-center glass-panel-strong rounded-2xl overflow-hidden w-full max-w-sm">
           {([
             { id: 'rank' as BottomTab, icon: Trophy, label: 'RANK' },
-            { id: 'play' as BottomTab, icon: Gamepad2, label: 'PLAY' },
             { id: 'shop' as BottomTab, icon: ShoppingBag, label: 'SHOP' },
+            { id: 'play' as BottomTab, icon: Gamepad2, label: 'PLAY' },
             { id: 'profile' as BottomTab, icon: User, label: 'PROFILE' },
             { id: 'settings' as BottomTab, icon: Settings, label: 'CONFIG' },
           ]).map((tab) => {
@@ -624,9 +634,9 @@ const MainMenu = ({ onStart, initialTab = 'play', hasPass, onRequestMint }: Main
   );
 };
 
-// ─── Profile Dashboard ────────────────────────────────────────────────────────
+// â”€â”€â”€ Profile Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const AVATARS = [User, Smile, Ghost, Bot, Zap];
+
 const AVATAR_COLORS = [
   'linear-gradient(135deg,#9333ea,#ec4899)', // purple-pink
   'linear-gradient(135deg,#eab308,#f97316)', // yellow-orange
@@ -635,20 +645,24 @@ const AVATAR_COLORS = [
   'linear-gradient(135deg,#f43f5e,#fbbf24)'  // rose-amber
 ];
 
-function ProfileDashboard({ progress, onOpenLegal, isLandscape, hasPass }: {
+
+
+function ProfileDashboard({ progress, onOpenLegal, isLandscape, hasPass, onRequestMint, onRefresh }: {
   progress: any,
   onOpenLegal: (type: 'privacy' | 'terms') => void,
   isLandscape?: boolean;
   hasPass?: boolean | null;
+  onRequestMint: () => void;
+  onRefresh: () => void;
 }) {
-  const { publicKey, connected } = useWallet();
+  const { walletAddress: publicKey, connected } = useNativeWallet();
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(progress.username || '');
   const [editAvatar, setEditAvatar] = useState(progress.avatarIndex || 0);
   const levelInfo = computeLevelFromTotalXp(progress.totalXp);
 
-  const CurrentAvatar = AVATARS[progress.avatarIndex || 0] || User;
+  const currentAvatarData = getAvatarById(progress.selectedAvatar);
 
   const getRank = (score: number) => {
     if (score > 100000) return { name: 'TOKEN OVERLORD', color: '#c084fc', glow: 'rgba(192,132,252,0.25)' };
@@ -685,263 +699,272 @@ function ProfileDashboard({ progress, onOpenLegal, isLandscape, hasPass }: {
 
   return (
     <div className={`flex ${isLandscape ? 'flex-row items-center justify-center max-w-4xl mx-auto gap-6' : 'flex-col gap-3'}`}>
-
       {/* Left Column (If Landscape) / Top (If Portrait) */}
       <div className={`flex flex-col gap-3 ${isLandscape ? 'flex-[0.8] w-full max-w-sm' : ''}`}>
-
-        {/* ── Header card or Edit UI ── */}
         {isEditing ? (
           <div
-            className="rounded-2xl p-4 flex flex-col gap-3 animate-fade-in"
+            className="rounded-2xl p-4 flex flex-col gap-4 animate-fade-in"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
           >
-            <div className="flex gap-2 justify-between">
-              {AVATARS.map((Icon, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setEditAvatar(idx)}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${editAvatar === idx ? 'scale-110 border-2 border-white' : 'opacity-40 hover:opacity-100'}`}
-                  style={{ background: AVATAR_COLORS[idx] }}
-                >
-                  <Icon className="w-5 h-5 text-white" />
-                </button>
-              ))}
+            <p className="text-[10px] font-display font-black text-purple-400 tracking-[0.2em] uppercase text-center">Customize Profile</p>
+            <div className="grid grid-cols-4 gap-2">
+              {AVATARS.slice(0, 8).map((avatar) => {
+                const isOwned = avatar.tier === 'free' || progress.ownedAvatars?.includes(avatar.id);
+                return (
+                  <button
+                    key={avatar.id}
+                    onClick={() => isOwned && setEditAvatar(avatar.id)}
+                    className={`aspect-square rounded-xl flex items-center justify-center p-1 relative ${editAvatar === avatar.id ? 'ring-2 ring-white scale-105 bg-white/10' : 'bg-black/40 opacity-40 hover:opacity-100'}`}
+                    disabled={!isOwned}
+                  >
+                    <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: avatar.svg }} />
+                    {!isOwned && <Lock className="absolute w-3 h-3 text-white/40" />}
+                  </button>
+                );
+              })}
             </div>
             <input
               type="text"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               placeholder="Enter Username"
-              className="bg-black/50 border border-white/20 rounded-lg px-3 py-2 text-white text-sm font-display text-center outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.3)] transition-all"
+              className="bg-black/50 border border-white/20 rounded-xl px-4 py-2.5 text-white text-sm font-display text-center outline-none focus:border-purple-400 focus:shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
               maxLength={15}
             />
-            <div className="flex gap-2 mt-1">
-              <button onClick={handleCancel} className="flex-1 bg-white/10 hover:bg-white/20 text-white transition-colors rounded-lg py-2 text-xs font-bold font-display flex items-center justify-center gap-1">
-                <X className="w-3.5 h-3.5" /> CANCEL
+            <div className="flex gap-2">
+              <button onClick={handleCancel} className="flex-1 bg-white/5 hover:bg-white/10 text-white/70 transition-colors rounded-xl py-3 text-[10px] font-black font-display tracking-widest border border-white/5">
+                CANCEL
               </button>
-              <button onClick={handleSave} className="flex-1 bg-purple-500 hover:bg-purple-400 text-white transition-colors rounded-lg py-2 text-xs font-bold font-display flex items-center justify-center gap-1 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
-                <Check className="w-3.5 h-3.5" /> SAVE
+              <button onClick={() => {
+                saveProfile(editName, 0);
+                setSelectedAvatar(editAvatar);
+                onRefresh();
+                setIsEditing(false);
+              }} className="flex-1 bg-purple-500 hover:bg-purple-400 text-white transition-colors rounded-xl py-3 text-[10px] font-black font-display tracking-widest shadow-[0_0_20px_rgba(168,85,247,0.4)]">
+                SAVE CHANGES
               </button>
             </div>
           </div>
         ) : (
           <div
-            className={`rounded-2xl p-4 flex items-center gap-4 animate-fade-in relative ${hasPass ? 'overflow-hidden' : ''}`}
+            className={`rounded-2xl p-4 flex flex-col gap-4 animate-fade-in relative ${hasPass ? 'overflow-hidden' : ''}`}
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: hasPass ? '2px solid rgba(251,191,36,0.6)' : '1px solid rgba(255,255,255,0.1)',
               boxShadow: hasPass ? 'inset 0 0 20px rgba(251,191,36,0.15), 0 0 15px rgba(251,191,36,0.2)' : 'none'
             }}
           >
-            {/* Ambient gold glow if Game Pass */}
             {hasPass && (
-              <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/10 via-amber-300/5 to-transparent pointer-events-none" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(251,191,36,0.15),transparent_70%)] pointer-events-none" />
             )}
-
-            {/* Avatar with status dot */}
-            <div className="relative flex-shrink-0 z-10">
-              <div
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center ${hasPass ? 'border-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.5)]' : ''}`}
-                style={{ background: AVATAR_COLORS[progress.avatarIndex || 0] }}
-              >
-                <CurrentAvatar className="w-7 h-7 text-white" />
-              </div>
-              {connected && (
-                <div
-                  className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-black animate-pulse"
-                  style={{ background: '#4ade80' }}
-                />
-              )}
-            </div>
-
-            {/* Identity */}
-            <div className="flex-1 min-w-0 z-10">
-              <div className="flex justify-between items-center gap-2">
-                <p className="text-sm font-display font-black text-white leading-tight truncate">
-                  {displayName}
-                </p>
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 transition-all flex-shrink-0 border border-white/10"
-                >
-                  <Edit2 className="w-3.5 h-3.5 text-white/70" />
-                </button>
-              </div>
-
-              {/* STREAK BADGE */}
-              {progress.dailyStreak > 0 && (
-                <div className="mt-1 flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/20 rounded-md px-2 py-0.5 w-fit">
-                  <Flame className="w-3 h-3 text-orange-400 fill-orange-400/20" />
-                  <span className="text-[9px] font-display font-black text-orange-400 tracking-wider font-bold">
-                    {progress.dailyStreak} DAY STREAK
-                  </span>
-                </div>
-              )}
-
-              {/* LEVEL & XP PROGRESS */}
-              <div className="mt-2.5 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between leading-none">
-                  <span className="text-[10px] font-display font-black text-cyan-400 tracking-wider uppercase">Level {levelInfo.level}</span>
-                  <span className="text-[9px] text-white/40 font-bold tabular-nums">{levelInfo.xpIntoLevel} / {levelInfo.xpForNext} XP</span>
-                </div>
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden border border-white/5 p-0.5">
-                  <div
-                    className="h-full bg-gradient-to-r from-cyan-400 via-purple-500 to-fuchsia-500 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.4)] transition-all duration-1000"
-                    style={{ width: `${Math.min(100, (levelInfo.xpIntoLevel / levelInfo.xpForNext) * 100)}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between mt-0.5 leading-none px-0.5">
-                  <span className="text-[8px] text-white/25 font-bold tracking-[0.1em] uppercase">Daily Earnings</span>
-                  <span className="text-[8px] text-white/30 font-bold tabular-nums">{progress.earnedToday || 0} / {XP_CONFIG.dailyCapXp}</span>
+            <div className="flex items-center gap-4 relative z-10">
+              <div className="relative flex-shrink-0">
+                <div className={`w-16 h-16 rounded-[20px] flex items-center justify-center p-1 overflow-hidden bg-black/60 ${hasPass ? 'border-2 border-yellow-400/80 shadow-[0_0_20px_rgba(251,191,36,0.4)]' : 'border border-white/10'}`}>
+                  <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: currentAvatarData.svg }} />
                 </div>
               </div>
-
-              <div className="flex items-center gap-2 mt-2.5">
-                <span
-                  className="text-[9px] font-display font-bold tracking-widest px-2 py-0.5 rounded-full"
-                  style={{ color: rank.color, background: rank.glow, border: `1px solid ${rank.color}40` }}
-                >
-                  {rank.name}
-                </span>
-                {connected && publicKey && (
-                  <button onClick={copyAddress} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
-                    {copied
-                      ? <CheckCircle className="w-3.5 h-3.5 text-green-400" />
-                      : <Copy className="w-3.5 h-3.5 text-white/40" />}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  {hasPass && <Crown className="w-4 h-4 text-yellow-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]" />}
+                  <p className="text-base font-display font-black text-white leading-tight truncate tracking-tight">{displayName}</p>
+                  <button onClick={() => setIsEditing(true)} className="p-1 rounded-lg bg-white/5 hover:bg-white/15 transition-all border border-white/10 ml-0.5">
+                    <Edit2 className="w-3.3 h-3.3 text-white/50" />
                   </button>
-                )}
+                  {hasPass && (
+                    <div className="ml-auto bg-gradient-to-br from-yellow-300 via-amber-500 to-amber-700 text-black text-[7px] font-black px-2 py-1 rounded-md shadow-lg border border-white/30 animate-pulse flex items-center gap-1 shrink-0">
+                      <Trophy className="w-2 h-2" /> GAME PASS
+                    </div>
+                  )}
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border" style={{ color: rank.color, background: `${rank.color}15`, borderColor: `${rank.color}30` }}>
+                    <ShieldCheck className="w-2.5 h-2.5" />
+                    <span className="text-[8px] font-display font-black tracking-widest uppercase">{rank.name}</span>
+                  </div>
+                  {connected && publicKey && (
+                    <button onClick={copyAddress} className="p-1 rounded-lg hover:bg-white/10 transition-colors">
+                      {copied ? <CheckCircle className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-white/40" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            {progress.dailyStreak > 0 && (
+              <div className="flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/20 rounded-md px-2 py-0.5 w-fit relative z-10">
+                <Flame className="w-3 h-3 text-orange-400 fill-orange-400/20" />
+                <span className="text-[9px] font-display font-black text-orange-400 tracking-wider uppercase">{progress.dailyStreak} DAY STREAK</span>
+              </div>
+            )}
+            <div className="flex flex-col gap-1.5 relative z-10">
+              <div className="flex items-center justify-between leading-none">
+                <span className="text-[10px] font-display font-black text-cyan-400 tracking-wider uppercase">Level {levelInfo.level}</span>
+                <span className="text-[9px] text-white/40 font-bold">{levelInfo.xpIntoLevel} / {levelInfo.xpForNext} XP</span>
+              </div>
+              <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden border border-white/5 p-0.5">
+                <div className="h-full bg-gradient-to-r from-cyan-400 via-purple-500 to-fuchsia-500 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.4)] transition-all duration-1000" style={{ width: `${Math.min(100, (levelInfo.xpIntoLevel / levelInfo.xpForNext) * 100)}%` }} />
               </div>
             </div>
           </div>
         )}
 
-        {/* ── COLLECTION STATS ── */}
-        <div
-          className="rounded-2xl p-4 flex flex-col gap-3 animate-fade-in"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-        >
+        {!hasPass && (
+          <div onClick={onRequestMint} className="cursor-pointer rounded-2xl p-4 flex items-center justify-between border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-yellow-500/10 to-amber-500/10 hover:from-amber-500/20 hover:to-amber-500/20 transition-all group animate-fade-in">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/30 group-hover:scale-110 transition-transform">
+                <Star className="w-6 h-6 text-amber-400 fill-amber-400/20" />
+              </div>
+              <div>
+                <h4 className="text-sm font-display font-black text-white leading-tight">GET GAME PASS</h4>
+                <p className="text-[10px] text-white/50 mt-0.5 uppercase tracking-widest">Lifetime Access</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-lg font-display font-black text-amber-400">0.013 SOL</p>
+              <p className="text-[9px] text-white/30 uppercase tracking-widest">LEGENDARY</p>
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-2xl p-4 flex flex-col gap-3 animate-fade-in" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
           <div className="flex items-center gap-2 mb-1">
             <Package className="w-4 h-4 text-emerald-400" />
-            <p className="text-[10px] font-display font-black text-emerald-400 tracking-[0.2em] uppercase">Inventory status</p>
+            <p className="text-[10px] font-display font-black text-emerald-400 tracking-[0.2em] uppercase">Inventory</p>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
               <div className="flex justify-between text-[9px] font-bold text-white/40 uppercase tracking-widest leading-none">
                 <span>Blades</span>
-                <span className="text-white/60">{(progress.ownedBlades?.length || 1)} / {BLADE_SKINS.length}</span>
+                <span className="text-white/60">{progress.ownedBlades?.length || 1} / {BLADE_SKINS.length}</span>
               </div>
               <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
-                  style={{ width: `${((progress.ownedBlades?.length || 1) / BLADE_SKINS.length) * 100}%` }}
-                />
+                <div className="h-full bg-emerald-500" style={{ width: `${((progress.ownedBlades?.length || 1) / BLADE_SKINS.length) * 100}%` }} />
               </div>
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex justify-between text-[9px] font-bold text-white/40 uppercase tracking-widest leading-none">
                 <span>Frames</span>
-                <span className="text-white/60">{(progress.ownedFrames?.length || 1)} / {TOKEN_FRAMES.length}</span>
+                <span className="text-white/60">{progress.ownedFrames?.length || 1} / {TOKEN_FRAMES.length}</span>
               </div>
               <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]"
-                  style={{ width: `${((progress.ownedFrames?.length || 1) / TOKEN_FRAMES.length) * 100}%` }}
-                />
+                <div className="h-full bg-blue-500" style={{ width: `${((progress.ownedFrames?.length || 1) / TOKEN_FRAMES.length) * 100}%` }} />
               </div>
             </div>
           </div>
         </div>
 
-        {/* ── Legal — full-width stacked, always readable ── */}
         <div className="flex flex-col gap-2 mt-auto">
-          <button
-            onClick={() => onOpenLegal('privacy')}
-            className="w-full rounded-xl px-4 py-3 flex items-center gap-3 transition-all active:scale-[0.98]"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-          >
-            <Shield className="w-4 h-4 flex-shrink-0 text-blue-400" />
+          <button onClick={() => onOpenLegal('privacy')} className="w-full rounded-xl px-4 py-3 flex items-center gap-3 bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
+            <Shield className="w-4 h-4 text-blue-400" />
             <span className="text-xs font-display font-bold text-white">Privacy Policy</span>
-            <ChevronRight className="w-3.5 h-3.5 text-white/30 ml-auto flex-shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-white/30 ml-auto" />
           </button>
-          <button
-            onClick={() => onOpenLegal('terms')}
-            className="w-full rounded-xl px-4 py-3 flex items-center gap-3 transition-all active:scale-[0.98]"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-          >
-            <FileText className="w-4 h-4 flex-shrink-0 text-purple-400" />
+          <button onClick={() => onOpenLegal('terms')} className="w-full rounded-xl px-4 py-3 flex items-center gap-3 bg-white/5 border border-white/10 hover:bg-white/10 transition-all">
+            <FileText className="w-4 h-4 text-purple-400" />
             <span className="text-xs font-display font-bold text-white">Terms &amp; Conditions</span>
-            <ChevronRight className="w-3.5 h-3.5 text-white/30 ml-auto flex-shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-white/30 ml-auto" />
           </button>
         </div>
-
       </div>
 
-      {/* Right Column (If Landscape) / Bottom (If Portrait) */}
       <div className={`flex flex-col gap-3 ${isLandscape ? 'flex-[1.2]' : ''}`}>
-        {/* ── Stats 2×2 grid — big readable numbers ── */}
         <div className="grid grid-cols-2 gap-3">
           {[
             { icon: TrendingUp, label: 'TOTAL SCORE', value: progress.totalScore.toLocaleString(), color: '#c084fc', bg: 'rgba(192,132,252,0.09)', border: 'rgba(192,132,252,0.2)' },
             { icon: Target, label: 'SLICED', value: progress.totalTokensSliced.toLocaleString(), color: '#22d3ee', bg: 'rgba(34,211,238,0.09)', border: 'rgba(34,211,238,0.2)' },
-            { icon: Medal, label: 'BEST COMBO', value: `${progress.bestCombo}×`, color: '#fbbf24', bg: 'rgba(251,191,36,0.09)', border: 'rgba(251,191,36,0.2)' },
+            { icon: Medal, label: 'BEST COMBO', value: `${progress.bestCombo}x`, color: '#fbbf24', bg: 'rgba(251,191,36,0.09)', border: 'rgba(251,191,36,0.2)' },
             { icon: Activity, label: 'GAMES PLAYED', value: String(progress.gamesPlayed), color: '#f472b6', bg: 'rgba(244,114,182,0.09)', border: 'rgba(244,114,182,0.2)' },
           ].map(({ icon: Icon, label, value, color, bg, border }) => (
             <div key={label} className="rounded-xl p-4 flex flex-col justify-center" style={{ background: bg, border: `1px solid ${border}` }}>
               <div className="flex items-center gap-1.5 mb-1.5">
-                <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
-                <p className="text-[10px] font-display font-bold tracking-widest uppercase truncate" style={{ color }}>
-                  {label}
-                </p>
+                <Icon className="w-4 h-4" style={{ color }} />
+                <p className="text-[10px] font-display font-bold tracking-widest uppercase truncate" style={{ color }}>{label}</p>
               </div>
-              <p className="text-3xl font-display font-black text-white tabular-nums leading-none">
-                {value}
-              </p>
+              <p className="text-3xl font-display font-black text-white leading-none">{value}</p>
             </div>
           ))}
         </div>
       </div>
-
     </div>
   );
 }
 
-function ShopManager({ hasPass }: { hasPass?: boolean | null }) {
-  const [subTab, setSubTab] = useState<'arena' | 'frames' | 'trails' | 'upgrades'>('arena');
+// â”€â”€â”€ SOL purchase helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const TREASURY = 'pR7YkBj2AsRLB7sSNJEyaSnengSF3c9UUQDH1y26NBi';
+
+function buySolItem(solAmount: number, type: 'board' | 'frame' | 'blade' | 'avatar', id: string, refresh: () => void) {
+  if (!window.Android) { alert('Wallet not available'); return; }
+
+  // Save as pending purchase
+  localStorage.setItem('pending-purchase', JSON.stringify({
+    type,
+    itemId: id,
+    timestamp: Date.now()
+  }));
+
+  (window.Android as any).sendSol(TREASURY, solAmount);
+}
+
+function buySolRevive(solAmount: number, qty: number, refresh: () => void) {
+  if (!window.Android) { alert('Wallet not available'); return; }
+
+  // Save as pending purchase
+  localStorage.setItem('pending-purchase', JSON.stringify({
+    type: 'revive',
+    qty: qty,
+    timestamp: Date.now()
+  }));
+
+  (window.Android as any).sendSol(TREASURY, solAmount);
+}
+
+function buyFullBundle(refresh: () => void) {
+  if (!window.Android) { alert('Wallet not available'); return; }
+
+  // Save as pending purchase
+  localStorage.setItem('pending-purchase', JSON.stringify({
+    type: 'bundle',
+    timestamp: Date.now()
+  }));
+
+  (window.Android as any).sendSol(TREASURY, 0.12);
+}
+
+function BundleBanner({ onRefresh }: { onRefresh: () => void }) {
+  return (
+    <div onClick={() => buyFullBundle(onRefresh)}
+      className="cursor-pointer rounded-2xl border border-yellow-400/30 bg-gradient-to-r from-yellow-500/10 via-amber-400/10 to-yellow-500/10 p-4 flex items-center justify-between hover:from-yellow-500/20 hover:to-yellow-500/20 transition-all">
+      <div>
+        <p className="text-xs font-display font-black text-yellow-400 tracking-widest uppercase">💎 FULL BUNDLE</p>
+        <p className="text-[10px] text-white/50 mt-0.5">All arenas • frames • trails unlocked</p>
+      </div>
+      <div className="text-right">
+        <p className="text-lg font-display font-black text-yellow-400">0.12 SOL</p>
+        <p className="text-[9px] text-white/30 uppercase tracking-wider">Best Value</p>
+      </div>
+    </div>
+  );
+}
+
+// â”€â”€â”€ Shop Manager â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function ShopManager({ hasPass, onRefresh, walletAddress }: { hasPass: boolean | null, onRefresh: () => void, walletAddress?: string }) {
+  const [subTab, setSubTab] = useState<'arena' | 'frames' | 'trails' | 'upgrades' | 'avatars'>('arena');
   const [progress, setProgress] = useState(loadProgress());
-  const isPassHolder = hasPass === true;
-
-  // Refresh progress after purchase
-  const refresh = () => setProgress(loadProgress());
-
-  const handleBuyFrame = (id: string, cost: number) => {
-    if (buyFrame(id, cost)) {
-      refresh();
-      setSelectedFrame(id);
+  const refresh = () => {
+    setProgress(loadProgress());
+    onRefresh();
+    // Auto-sync to cloud after purchase if wallet connected
+    if (walletAddress) {
+      syncProgressToCloud(walletAddress);
     }
   };
 
-  const handleBuyBlade = (id: string, cost: number) => {
-    if (buyBlade(id, cost)) {
-      refresh();
-      setSelectedBlade(id);
-    }
-  };
-
-  const handleBuyBoard = (id: string, cost: number) => {
-    if (buyBoard(id, cost)) {
-      refresh();
-      setSelectedBoard(id);
-    }
-  };
-
-  const handleBuyRevive = () => {
-    if (buyRevive(2500)) refresh();
-  };
+  const handleBuyFrame = (id: string, cost: number) => { if (buyFrame(id, cost)) { setSelectedFrame(id); refresh(); } };
+  const handleBuyBlade = (id: string, cost: number) => { if (buyBlade(id, cost)) { setSelectedBlade(id); refresh(); } };
+  const handleBuyBoard = (id: string, cost: number) => { if (buyBoard(id, cost)) { setSelectedBoard(id); refresh(); } };
+  const handleBuyAvatar = (id: string, cost: number) => { if (buyAvatar(id, cost)) { setSelectedAvatar(id); refresh(); } };
 
   return (
     <div className="flex-1 flex flex-col min-h-0 animate-fade-in">
-      {/* Shop Header with Coins */}
       <div className="flex items-center justify-between px-6 py-4 flex-shrink-0">
         <div>
           <h2 className="text-2xl font-display font-black text-white tracking-tight">ARENA SHOP</h2>
@@ -952,143 +975,155 @@ function ShopManager({ hasPass }: { hasPass?: boolean | null }) {
         </div>
       </div>
 
-      {/* Sub-tabs */}
       <div className="flex px-4 gap-2 mb-4 overflow-x-auto no-scrollbar flex-shrink-0">
-        {[
+        {([
           { id: 'arena', label: 'ARENAS', icon: ShieldIcon },
           { id: 'frames', label: 'FRAMES', icon: CircleDashed },
-          { id: 'trails', label: 'TRAILS', icon: Zap },
-          { id: 'upgrades', label: 'POWER-UPS', icon: Gift },
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setSubTab(t.id as any)}
+          { id: 'trails', label: 'TRAILS', icon: Sword },
+          { id: 'avatars', label: 'AVATARS', icon: User },
+          { id: 'upgrades', label: 'UPGRADES', icon: Zap },
+        ] as const).map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setSubTab(id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-display font-black tracking-widest transition-all whitespace-nowrap
-              ${subTab === t.id ? 'bg-white text-black' : 'glass-panel text-white/60 hover:text-white'}
-            `}
-          >
-            <t.icon className="w-3.5 h-3.5" />
-            {t.label}
+              ${subTab === id ? 'bg-white text-black' : 'glass-panel text-white/60 hover:text-white'}`}>
+            <Icon className="w-3.5 h-3.5" />{label}
           </button>
         ))}
       </div>
 
-      {/* Content Area */}
       <div className="flex-1 overflow-y-auto px-4 custom-scrollbar pb-32">
         {subTab === 'arena' && (
-          <div className="grid grid-cols-2 gap-3">
-            {BOARD_THEMES.map((theme) => {
-              const isOwned = isPassHolder || progress.ownedBoards.includes(theme.id);
-              const isSelected = theme.id === progress.selectedBoard;
-              return (
-                <ShopItem
-                  key={theme.id}
-                  title={theme.name}
-                  subtitle={theme.description}
-                  image={theme.preview}
-                  emoji={theme.emoji}
-                  selected={isSelected}
-                  owned={isOwned}
-                  cost={theme.cost}
-                  onAction={() => isOwned ? (() => { setSelectedBoard(theme.id); refresh(); })() : handleBuyBoard(theme.id, theme.cost)}
-                  canAfford={progress.totalScore >= theme.cost}
-                />
-              );
-            })}
+          <div className="flex flex-col gap-4">
+            <BundleBanner onRefresh={refresh} />
+            <div className="grid grid-cols-2 gap-3">
+              {BOARD_THEMES.map((theme) => {
+                const isPassPerk = theme.id === 'void-whisper';
+                const isOwned = theme.tier === 'free' || progress.ownedBoards.includes(theme.id) || (hasPass && isPassPerk);
+                const isSelected = theme.id === progress.selectedBoard;
+                return (
+                  <ShopItem key={theme.id} title={theme.name} subtitle={theme.description}
+                    image={theme.preview} emoji={theme.emoji} selected={isSelected} owned={isOwned}
+                    tier={theme.tier} cost={theme.cost} solPrice={theme.solPrice} isPassPerk={isPassPerk}
+                    onAction={() => {
+                      if (isOwned) { setSelectedBoard(theme.id); refresh(); }
+                      else if (theme.tier === 'sol' && theme.solPrice) buySolItem(theme.solPrice, 'board', theme.id, refresh);
+                      else handleBuyBoard(theme.id, theme.cost);
+                    }}
+                    canAfford={progress.totalScore >= theme.cost}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
 
         {subTab === 'frames' && (
-          <div className="grid grid-cols-2 gap-3">
-            {TOKEN_FRAMES.map(f => {
-              const isOwned = isPassHolder || progress.ownedFrames.includes(f.id);
-              const isSelected = progress.selectedFrame === f.id;
-              return (
-                <ShopItem
-                  key={f.id}
-                  title={f.name}
-                  subtitle={f.description}
-                  selected={isSelected}
-                  owned={isOwned}
-                  cost={f.cost}
-                  frame={f}
-                  onAction={() => isOwned ? (() => { setSelectedFrame(f.id); refresh(); })() : handleBuyFrame(f.id, f.cost)}
-                  canAfford={progress.totalScore >= f.cost}
-                />
-              );
-            })}
+          <div className="flex flex-col gap-4">
+            <BundleBanner onRefresh={refresh} />
+            <div className="grid grid-cols-2 gap-3">
+              {TOKEN_FRAMES.map(f => {
+                const isPassPerk = f.id === 'stardust-burst';
+                const isOwned = f.tier === 'free' || progress.ownedFrames.includes(f.id) || (hasPass && isPassPerk);
+                const isSelected = progress.selectedFrame === f.id;
+                return (
+                  <ShopItem key={f.id} title={f.name} subtitle={f.description}
+                    selected={isSelected} owned={isOwned} tier={f.tier} cost={f.cost} solPrice={f.solPrice} frame={f} isPassPerk={isPassPerk}
+                    onAction={() => {
+                      if (isOwned) { setSelectedFrame(f.id); refresh(); }
+                      else if (f.tier === 'sol' && f.solPrice) buySolItem(f.solPrice, 'frame', f.id, refresh);
+                      else handleBuyFrame(f.id, f.cost);
+                    }}
+                    canAfford={progress.totalScore >= f.cost}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
 
         {subTab === 'trails' && (
-          <div className="grid grid-cols-2 gap-3">
-            {BLADE_SKINS.map(b => {
-              const isOwned = isPassHolder || progress.ownedBlades.includes(b.id);
-              const isSelected = progress.selectedBlade === b.id;
-              return (
-                <ShopItem
-                  key={b.id}
-                  title={b.name}
-                  subtitle={b.description}
-                  emoji={b.emoji}
-                  selected={isSelected}
-                  owned={isOwned}
-                  cost={b.cost}
-                  trail={b}
-                  onAction={() => isOwned ? (() => { setSelectedBlade(b.id); refresh(); })() : handleBuyBlade(b.id, b.cost)}
-                  canAfford={progress.totalScore >= b.cost}
-                />
-              );
-            })}
+          <div className="flex flex-col gap-4">
+            <BundleBanner onRefresh={refresh} />
+            <div className="grid grid-cols-2 gap-3">
+              {BLADE_SKINS.map(b => {
+                const isPassPerk = b.id === 'lava-slash';
+                const isOwned = b.tier === 'free' || progress.ownedBlades.includes(b.id) || (hasPass && isPassPerk);
+                const isSelected = progress.selectedBlade === b.id;
+                return (
+                  <ShopItem key={b.id} title={b.name} subtitle={b.description}
+                    emoji={b.emoji} selected={isSelected} owned={isOwned} tier={b.tier} cost={b.cost} solPrice={b.solPrice} trail={b} isPassPerk={isPassPerk}
+                    onAction={() => {
+                      if (isOwned) { setSelectedBlade(b.id); refresh(); }
+                      else if (b.tier === 'sol' && b.solPrice) buySolItem(b.solPrice, 'blade', b.id, refresh);
+                      else handleBuyBlade(b.id, b.cost);
+                    }}
+                    canAfford={progress.totalScore >= b.cost}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {subTab === 'avatars' && (
+          <div className="flex flex-col gap-4">
+            <BundleBanner onRefresh={refresh} />
+            <div className="grid grid-cols-2 gap-3">
+              {AVATARS.map(a => {
+                const isPassPerk = a.id === 'legendary-pass';
+                const isOwned = a.tier === 'free' || progress.ownedAvatars.includes(a.id) || (hasPass && isPassPerk);
+                const isSelected = progress.selectedAvatar === a.id;
+                return (
+                  <ShopItem key={a.id} title={a.name} subtitle={a.description}
+                    selected={isSelected} owned={isOwned} tier={a.tier} cost={a.cost} solPrice={a.solPrice} avatar={a} isPassPerk={isPassPerk}
+                    onAction={() => {
+                      if (isOwned) { setSelectedAvatar(a.id); refresh(); }
+                      else if (a.tier === 'sol' && a.solPrice) buySolItem(a.solPrice, 'avatar', a.id, refresh);
+                      else handleBuyAvatar(a.id, a.cost);
+                    }}
+                    canAfford={progress.totalScore >= a.cost}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
 
         {subTab === 'upgrades' && (
           <div className="flex flex-col gap-6">
-            {/* ── REVIVE ── */}
-            <div className="glass-panel-strong p-5 rounded-3xl border-white/5 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-                    <Flame className="w-8 h-8 text-amber-500" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-display font-black text-white">PHOENIX REVIVE</h4>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest">Consumable • {progress.revives} Owned</p>
-                  </div>
+            {/* PHOENIX REVIVE */}
+            <div className="glass-panel-strong p-5 rounded-3xl border-white/5 flex flex-col gap-3">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                  <Flame className="w-8 h-8 text-amber-500" />
                 </div>
-                <button
-                  onClick={handleBuyRevive}
-                  disabled={progress.totalScore < 2500}
-                  className={`px-5 py-3 rounded-2xl font-display font-black tracking-widest text-[11px] transition-all
-                    ${progress.totalScore >= 2500 ? 'bg-amber-500 text-black hover:scale-105 active:scale-95' : 'bg-white/5 text-white/20'}
-                  `}
-                >
-                  1x Buy (2.5K)
+                <div>
+                  <h4 className="text-lg font-display font-black text-white">PHOENIX REVIVE</h4>
+                  <p className="text-[10px] text-white/40 uppercase tracking-widest">Consumable â€¢ {progress.revives} Owned</p>
+                </div>
+              </div>
+              {/* SOL-only purchase rows */}
+              <div className="flex gap-2">
+                <button onClick={() => buySolRevive(0.0025, 1, refresh)}
+                  className="flex-1 flex justify-between items-center px-4 py-3 rounded-xl border border-yellow-400/30 bg-yellow-400/10 text-yellow-300 font-bold hover:bg-yellow-400/20 transition-all text-xs">
+                  <span>1x</span><span>0.0025 SOL</span>
                 </button>
               </div>
-
               <div className="flex gap-2">
-                <button
-                  onClick={() => { if (buyRevives(5, 12500)) refresh(); }}
-                  disabled={progress.totalScore < 12500}
-                  className="flex-1 flex justify-between items-center px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 font-bold hover:bg-amber-500/20 transition-all text-xs disabled:opacity-50 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/20"
-                >
-                  <span>5x Pack</span>
-                  <span className="flex items-center gap-1"><Coins className="w-3 h-3" /> 12.5K</span>
+                <button onClick={() => buySolRevive(0.010, 5, refresh)}
+                  className="flex-1 flex justify-between items-center px-4 py-3 rounded-xl border border-yellow-400/30 bg-yellow-400/10 text-yellow-300 font-bold hover:bg-yellow-400/20 transition-all text-xs">
+                  <span>5x</span><span>0.010 SOL</span>
                 </button>
-                <button
-                  onClick={() => { if (buyRevives(10, 25000)) refresh(); }}
-                  disabled={progress.totalScore < 25000}
-                  className="flex-1 flex justify-between items-center px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-500 font-bold hover:bg-amber-500/20 transition-all text-xs disabled:opacity-50 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/20"
-                >
-                  <span>10x Pack</span>
-                  <span className="flex items-center gap-1"><Coins className="w-3 h-3" /> 25K</span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => buySolRevive(0.015, 10, refresh)}
+                  className="flex-1 flex justify-between items-center px-4 py-3 rounded-xl border border-yellow-400/30 bg-yellow-400/10 text-yellow-300 font-bold hover:bg-yellow-400/20 transition-all text-xs">
+                  <span>10x</span><span>0.015 SOL</span>
                 </button>
               </div>
             </div>
 
-            {/* ── MIDAS TOUCH ── */}
+            {/* MIDAS TOUCH */}
             <div className="glass-panel-strong p-5 rounded-3xl border-white/5 flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -1097,32 +1132,22 @@ function ShopManager({ hasPass }: { hasPass?: boolean | null }) {
                   </div>
                   <div>
                     <h4 className="text-lg font-display font-black text-white leading-tight">MIDAS TOUCH</h4>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">Gold Rush • {progress.midasTouch} Owned</p>
+                    <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">Gold Rush â€¢ {progress.midasTouch} Owned</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => { if (buyPowerUp('midas-touch', 1, 4000)) refresh(); }}
-                  disabled={progress.totalScore < 4000}
+                <button onClick={() => { if (buyPowerUp('midas-touch', 1, 500000)) refresh(); }} disabled={progress.totalScore < 500000}
                   className={`px-5 py-3 rounded-2xl font-display font-black tracking-widest text-[11px] transition-all
-                    ${progress.totalScore >= 4000 ? 'bg-yellow-500 text-black hover:scale-105 active:scale-95' : 'bg-white/5 text-white/20'}
-                  `}
-                >
-                  1x Buy (4K)
+                    ${progress.totalScore >= 500000 ? 'bg-yellow-500 text-black hover:scale-105 active:scale-95' : 'bg-white/5 text-white/20'}`}>
+                  1x (500K)
                 </button>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { if (buyPowerUp('midas-touch', 5, 18000)) refresh(); }}
-                  disabled={progress.totalScore < 18000}
-                  className="flex-1 flex justify-between items-center px-4 py-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 text-yellow-500 font-bold hover:bg-yellow-500/20 transition-all text-xs disabled:opacity-50 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/20"
-                >
-                  <span>5x Pack</span>
-                  <span className="flex items-center gap-1"><Coins className="w-3 h-3" /> 18K</span>
-                </button>
-              </div>
+              <button onClick={() => { if (buyPowerUp('midas-touch', 5, 2500000)) refresh(); }} disabled={progress.totalScore < 2500000}
+                className="flex justify-between items-center px-4 py-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 text-yellow-500 font-bold hover:bg-yellow-500/20 transition-all text-xs disabled:opacity-50 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/20">
+                <span>5x Pack</span><span className="flex items-center gap-1"><Coins className="w-3 h-3" /> 2.5M</span>
+              </button>
             </div>
 
-            {/* ── MEGA BLADE ── */}
+            {/* MEGA BLADE */}
             <div className="glass-panel-strong p-5 rounded-3xl border-white/5 flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -1131,29 +1156,19 @@ function ShopManager({ hasPass }: { hasPass?: boolean | null }) {
                   </div>
                   <div>
                     <h4 className="text-lg font-display font-black text-white leading-tight">MEGA BLADE</h4>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">3x Width • {progress.megaBlade} Owned</p>
+                    <p className="text-[10px] text-white/40 uppercase tracking-widest mt-0.5">3x Width â€¢ {progress.megaBlade} Owned</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => { if (buyPowerUp('mega-blade', 1, 3500)) refresh(); }}
-                  disabled={progress.totalScore < 3500}
+                <button onClick={() => { if (buyPowerUp('mega-blade', 1, 500000)) refresh(); }} disabled={progress.totalScore < 500000}
                   className={`px-5 py-3 rounded-2xl font-display font-black tracking-widest text-[11px] transition-all
-                    ${progress.totalScore >= 3500 ? 'bg-cyan-500 text-black hover:scale-105 active:scale-95' : 'bg-white/5 text-white/20'}
-                  `}
-                >
-                  1x Buy (3.5K)
+                    ${progress.totalScore >= 500000 ? 'bg-cyan-500 text-black hover:scale-105 active:scale-95' : 'bg-white/5 text-white/20'}`}>
+                  1x (500K)
                 </button>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { if (buyPowerUp('mega-blade', 5, 15000)) refresh(); }}
-                  disabled={progress.totalScore < 15000}
-                  className="flex-1 flex justify-between items-center px-4 py-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-500 font-bold hover:bg-cyan-500/20 transition-all text-xs disabled:opacity-50 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/20"
-                >
-                  <span>5x Pack</span>
-                  <span className="flex items-center gap-1"><Coins className="w-3 h-3" /> 15K</span>
-                </button>
-              </div>
+              <button onClick={() => { if (buyPowerUp('mega-blade', 5, 2000000)) refresh(); }} disabled={progress.totalScore < 2000000}
+                className="flex justify-between items-center px-4 py-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-500 font-bold hover:bg-cyan-500/20 transition-all text-xs disabled:opacity-50 disabled:border-white/5 disabled:bg-white/5 disabled:text-white/20">
+                <span>5x Pack</span><span className="flex items-center gap-1"><Coins className="w-3 h-3" /> 2M</span>
+              </button>
             </div>
           </div>
         )}
@@ -1161,6 +1176,7 @@ function ShopManager({ hasPass }: { hasPass?: boolean | null }) {
     </div>
   );
 }
+
 
 function ShopItem({
   title,
@@ -1174,7 +1190,11 @@ function ShopItem({
   onAction,
   canAfford,
   frame,
-  trail
+  trail,
+  avatar,
+  tier,
+  solPrice,
+  isPassPerk,
 }: {
   title: string;
   subtitle: string;
@@ -1188,6 +1208,10 @@ function ShopItem({
   canAfford?: boolean;
   frame?: TokenFrame;
   trail?: BladeSkin;
+  avatar?: any;
+  tier?: 'free' | 'coins' | 'sol';
+  solPrice?: number;
+  isPassPerk?: boolean;
 }) {
   return (
     <div
@@ -1218,6 +1242,10 @@ function ShopItem({
           <TrailPreview skin={trail} />
           <div className="w-full h-full absolute inset-0 bg-black/10" /> {/* Dimmer */}
         </div>
+      ) : avatar ? (
+        <div className="h-16 flex items-center justify-center bg-gradient-to-br from-white/5 to-transparent flex-shrink-0 relative overflow-hidden group-hover:from-white/10 transition-colors p-3"
+          dangerouslySetInnerHTML={{ __html: avatar.svg }}
+        />
       ) : (
         <div className="h-16 flex items-center justify-center bg-white/5 flex-shrink-0 group-hover:bg-white/10 transition-colors">
           <span className="text-2xl drop-shadow-md group-hover:scale-110 transition-transform">{emoji || '✨'}</span>
@@ -1225,9 +1253,17 @@ function ShopItem({
       )}
 
       <div className="p-3 relative z-10 flex flex-col flex-grow justify-between bg-gradient-to-t from-black/80 to-transparent">
-        <div>
+        <div className="flex flex-col gap-1">
+          {tier && (
+            <div className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-widest w-fit border
+              ${tier === 'sol' ? 'bg-yellow-400/10 text-yellow-400 border-yellow-400/30' :
+                tier === 'coins' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                  'bg-emerald-400/10 text-emerald-400 border-emerald-400/30'}`}>
+              {tier} TIER
+            </div>
+          )}
           <h4 className="text-[10px] font-display font-black text-white tracking-widest uppercase truncate drop-shadow-md">{title}</h4>
-          <p className="text-[8px] text-white/50 uppercase tracking-tight truncate mt-0.5 font-medium">{subtitle}</p>
+          <p className="text-[8px] text-white/50 uppercase tracking-tight truncate font-medium">{subtitle}</p>
         </div>
 
         <div className="mt-2.5 flex items-center justify-between">
@@ -1235,9 +1271,24 @@ function ShopItem({
             <div className="flex items-center gap-1.5 text-cyan-400 font-display font-black text-[9px] tracking-widest bg-cyan-400/10 px-2 py-0.5 rounded-md border border-cyan-400/20 w-fit">
               <Star className="w-3 h-3 fill-current" /> EQUIPPED
             </div>
-          ) : owned || cost === 0 ? (
+          ) : owned ? (
             <div className="flex items-center gap-1.5 text-emerald-400 font-display font-black text-[9px] tracking-widest bg-emerald-400/10 px-2 py-0.5 rounded-md border border-emerald-400/20 w-fit">
               <User className="w-3 h-3" /> OWNED
+            </div>
+          ) : isPassPerk ? (
+            <div className="flex items-center gap-1.5 text-amber-400 font-display font-black text-[9px] tracking-widest bg-amber-400/10 px-2 py-0.5 rounded-md border border-amber-400/20 w-fit animate-pulse">
+              <Star className="w-3 h-3" /> GAME PASS
+            </div>
+          ) : tier === 'free' ? (
+            <div className="flex items-center gap-1.5 text-emerald-400 font-display font-black text-[9px] tracking-widest bg-emerald-400/10 px-2 py-0.5 rounded-md border border-emerald-400/20 w-fit">
+              FREE
+            </div>
+          ) : tier === 'sol' && solPrice !== undefined ? (
+            <div className="flex items-center gap-1.5 text-yellow-400 font-display font-black text-[10px] px-2 py-0.5 rounded-md bg-yellow-400/10 border border-yellow-400/20">
+              {solPrice.toLocaleString(undefined, {
+                minimumFractionDigits: solPrice < 0.1 ? 3 : 2,
+                maximumFractionDigits: 4
+              })} SOL
             </div>
           ) : (
             <div className={`flex items-center gap-1.5 font-display font-black text-[10px] px-2 py-0.5 rounded-md ${canAfford ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-white/5 text-white/30 border border-white/5'}`}>
@@ -1245,7 +1296,7 @@ function ShopItem({
             </div>
           )}
 
-          {(!owned && cost > 0 && canAfford && !selected && !locked) && (
+          {(!owned && !selected && (tier === 'sol' || (cost > 0 && canAfford)) && !locked) && (
             <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
               <ShoppingBag className="w-3 h-3 text-amber-500" />
             </div>
@@ -1265,7 +1316,7 @@ function ShopItem({
   );
 }
 
-// ─── Settings Manager ────────────────────────────────────────────────────────
+// â”€â”€â”€ Settings Manager â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SettingsManager({ settings, onSave }: { settings: any, onSave: (s: any) => void }) {
   const [localSettings, setLocalSettings] = useState(settings);

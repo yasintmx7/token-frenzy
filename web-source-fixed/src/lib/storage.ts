@@ -11,6 +11,8 @@ export interface PlayerProgress {
   ownedFrames: string[];
   ownedBlades: string[];
   ownedBoards: string[];
+  selectedAvatar: string;
+  ownedAvatars: string[];
   avatarIndex?: number;
   // Consumables
   revives: number;
@@ -43,22 +45,40 @@ export interface LeaderboardEntry {
 const STORAGE_KEY = 'token-frenzy-progress';
 const LEADERBOARD_KEY = 'token-frenzy-leaderboard';
 
+// v2 = monetisation update. Old saves (no schemaVersion) get their
+// owned arrays reset to free-tier defaults so SOL items show prices.
+const SCHEMA_VERSION = 3;
+const FREE_BOARDS = ['neon-grid', 'cyber-purple', 'emerald-forest'];
+const FREE_BLADES = ['crypto-cyan', 'phoenix-ember'];
+const FREE_FRAMES = ['default', 'radar-pulse'];
+const FREE_AVATARS = ['recruit'];
+
 export function loadProgress(): PlayerProgress {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (data) {
       const parsed = JSON.parse(data);
-      return {
+
+      // ── Migration: reset stale ownership from pre-monetisation builds ──
+      const isOldSave = !parsed.schemaVersion || parsed.schemaVersion < SCHEMA_VERSION;
+      const ownedBoards = isOldSave ? FREE_BOARDS : (parsed.ownedBoards ?? FREE_BOARDS);
+      const ownedBlades = isOldSave ? FREE_BLADES : (parsed.ownedBlades ?? FREE_BLADES);
+      const ownedFrames = isOldSave ? FREE_FRAMES : (parsed.ownedFrames ?? FREE_FRAMES);
+      const ownedAvatars = isOldSave ? FREE_AVATARS : (parsed.ownedAvatars ?? FREE_AVATARS);
+
+      const progress: PlayerProgress = {
         totalScore: parsed.totalScore ?? 0,
         totalTokensSliced: parsed.totalTokensSliced ?? 0,
         bestCombo: parsed.bestCombo ?? 0,
         gamesPlayed: parsed.gamesPlayed ?? 0,
-        selectedBlade: parsed.selectedBlade ?? 'crypto-cyan',
-        selectedBoard: parsed.selectedBoard ?? 'neon-grid',
-        selectedFrame: parsed.selectedFrame ?? 'default',
-        ownedFrames: parsed.ownedFrames ?? ['default'],
-        ownedBlades: parsed.ownedBlades ?? ['crypto-cyan'],
-        ownedBoards: parsed.ownedBoards ?? ['neon-grid'],
+        selectedBlade: ownedBlades.includes(parsed.selectedBlade) ? parsed.selectedBlade : FREE_BLADES[0],
+        selectedBoard: ownedBoards.includes(parsed.selectedBoard) ? parsed.selectedBoard : FREE_BOARDS[0],
+        selectedFrame: ownedFrames.includes(parsed.selectedFrame) ? parsed.selectedFrame : FREE_FRAMES[0],
+        selectedAvatar: ownedAvatars.includes(parsed.selectedAvatar) ? parsed.selectedAvatar : FREE_AVATARS[0],
+        ownedFrames,
+        ownedBlades,
+        ownedBoards,
+        ownedAvatars,
         revives: parsed.revives ?? 0,
         midasTouch: parsed.midasTouch ?? 0,
         megaBlade: parsed.megaBlade ?? 0,
@@ -75,6 +95,12 @@ export function loadProgress(): PlayerProgress {
         lastPlayedDate: parsed.lastPlayedDate ?? '',
         dailyStreak: parsed.dailyStreak ?? 0,
       };
+
+      // Persist migration so it only runs once
+      if (isOldSave) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...progress, schemaVersion: SCHEMA_VERSION }));
+      }
+      return progress;
     }
   } catch { /* ignore */ }
   return {
@@ -82,12 +108,14 @@ export function loadProgress(): PlayerProgress {
     totalTokensSliced: 0,
     bestCombo: 0,
     gamesPlayed: 0,
-    selectedBlade: 'crypto-cyan',
-    selectedBoard: 'neon-grid',
-    selectedFrame: 'default',
-    ownedFrames: ['default'],
-    ownedBlades: ['crypto-cyan'],
-    ownedBoards: ['neon-grid'],
+    selectedBlade: FREE_BLADES[0],
+    selectedBoard: FREE_BOARDS[0],
+    selectedFrame: FREE_FRAMES[0],
+    selectedAvatar: 'recruit',
+    ownedFrames: FREE_FRAMES,
+    ownedBlades: FREE_BLADES,
+    ownedBoards: FREE_BOARDS,
+    ownedAvatars: FREE_AVATARS,
     revives: 0,
     midasTouch: 0,
     megaBlade: 0,
@@ -108,7 +136,7 @@ export function loadProgress(): PlayerProgress {
 
 export function saveProgress(progress: PlayerProgress): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...progress, schemaVersion: SCHEMA_VERSION }));
   } catch { /* ignore */ }
 }
 
@@ -145,7 +173,8 @@ export function updateProgressAfterGame(score: number, tokensSliced: number, bes
 
 export function setSelectedBlade(bladeId: string): void {
   const progress = loadProgress();
-  if (progress.ownedBlades.includes(bladeId) || progress.hasAcceptedTerms) {
+  // Allow equipping: explicitly owned OR the item would be free (tier check happens in UI)
+  if (progress.ownedBlades.includes(bladeId) || bladeId === 'crypto-cyan' || bladeId === 'phoenix-ember') {
     progress.selectedBlade = bladeId;
     saveProgress(progress);
   }
@@ -153,7 +182,7 @@ export function setSelectedBlade(bladeId: string): void {
 
 export function setSelectedFrame(frameId: string): void {
   const progress = loadProgress();
-  if (progress.ownedFrames.includes(frameId) || progress.hasAcceptedTerms) {
+  if (progress.ownedFrames.includes(frameId) || frameId === 'default' || frameId === 'radar-pulse') {
     progress.selectedFrame = frameId;
     saveProgress(progress);
   }
@@ -235,9 +264,19 @@ export function usePowerUp(type: 'midas-touch' | 'mega-blade'): boolean {
 
 export function setSelectedBoard(boardId: string): void {
   const progress = loadProgress();
-  // Allow switching if owned OR if they have the Game Pass (hasAcceptedTerms)
-  if (progress.ownedBoards.includes(boardId) || progress.hasAcceptedTerms) {
+  // Allow free boards: neon-grid, cyber-purple, emerald-forest are always free
+  const FREE_BOARDS = ['neon-grid', 'cyber-purple', 'emerald-forest'];
+  if (progress.ownedBoards.includes(boardId) || FREE_BOARDS.includes(boardId)) {
     progress.selectedBoard = boardId;
+    saveProgress(progress);
+  }
+}
+
+export function setSelectedAvatar(avatarId: string): void {
+  const progress = loadProgress();
+  // Allow equipping: explicitly owned OR free-tier avatar (recruit)
+  if (progress.ownedAvatars.includes(avatarId) || avatarId === 'recruit') {
+    progress.selectedAvatar = avatarId;
     saveProgress(progress);
   }
 }
@@ -247,6 +286,17 @@ export function buyBoard(boardId: string, cost: number): boolean {
   if (progress.totalScore >= cost && !progress.ownedBoards.includes(boardId)) {
     progress.totalScore -= cost;
     progress.ownedBoards.push(boardId);
+    saveProgress(progress);
+    return true;
+  }
+  return false;
+}
+
+export function buyAvatar(avatarId: string, cost: number): boolean {
+  const progress = loadProgress();
+  if (progress.totalScore >= cost && !progress.ownedAvatars.includes(avatarId)) {
+    progress.totalScore -= cost;
+    progress.ownedAvatars.push(avatarId);
     saveProgress(progress);
     return true;
   }

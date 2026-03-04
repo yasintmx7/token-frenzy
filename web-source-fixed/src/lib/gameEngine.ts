@@ -111,6 +111,8 @@ export interface GameState {
     midasTouch: { active: boolean; timeLeft: number };
     megaBlade: { active: boolean; timeLeft: number };
   };
+  // Laser mode cooldown (prevents rapid multi-hit in same frame)
+  laserHitCooldown?: number;
   // Void (Twin) Game specific state
   twinTargetId?: string | null;
 }
@@ -130,7 +132,7 @@ const MODE_CONFIGS: Record<GameMode, ModeConfig> = {
   zen: { lives: 999, bombRate: 0, spawnInterval: 1.25, speedMult: 0.48, batchMin: 2, batchMax: 4 },
   timewarp: { lives: 3, bombRate: 0.15, spawnInterval: 1.4, speedMult: 0.45, batchMin: 2, batchMax: 4 },
   void: { lives: 3, bombRate: 0.15, spawnInterval: 1.4, speedMult: 0.45, batchMin: 2, batchMax: 4 },
-  laser: { lives: 3, bombRate: 0.12, spawnInterval: 1.0, speedMult: 0.65, batchMin: 2, batchMax: 4 },
+  laser: { lives: 3, bombRate: 0.12, spawnInterval: 1.0, speedMult: 0.45, batchMin: 2, batchMax: 4 },
 };
 
 export function createGameState(mode: GameMode): GameState {
@@ -283,6 +285,11 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
     token.rotation += token.rotationSpeed * dt;
   }
 
+  // Hard cap on tokens to prevent Split mode accumulation lag
+  if (state.tokens.length > 40) {
+    state.tokens.splice(0, state.tokens.length - 40);
+  }
+
   // Remove tokens:
   // 1. Off-screen (lose life if missed)
   // 2. Sliced (removed immediately for performance optimization)
@@ -338,6 +345,11 @@ export function updateGameState(state: GameState, dt: number, w: number, h: numb
     half.flash = Math.max(0, 1 - (half.t / half.flashDur));
   }
   state.slicedHalves = state.slicedHalves.filter(half => half.t < half.duration);
+
+  // Hard cap on particles to prevent high-combo lag
+  if (state.particles.length > 250) {
+    state.particles.splice(0, state.particles.length - 250);
+  }
 
   // Power-up decay
   if (state.powerUps.midasTouch.active) {
@@ -469,13 +481,18 @@ export function checkSlice(
       if (l.active && l.type === 'danger') {
         const distY1 = Math.abs(y1 - l.y);
         const distY2 = Math.abs(y2 - l.y);
-        if (distY1 < 10 || distY2 < 10) {
-          state.lives--;
-          state.shakeAmount = 2.0;
-          state.soundQueue.push({ type: 'bomb' });
-          if (state.lives <= 0) {
-            state.gameOver = true;
-            state.soundQueue.push({ type: 'gameOver' });
+        // Narrower 3px hitbox and only trigger once per 0.5s to prevent rapid life drain
+        if ((distY1 < 3 || distY2 < 3)) {
+          const now = Date.now();
+          if (!state.laserHitCooldown || now - state.laserHitCooldown > 500) {
+            state.laserHitCooldown = now;
+            state.lives--;
+            state.shakeAmount = 2.0;
+            state.soundQueue.push({ type: 'bomb' });
+            if (state.lives <= 0) {
+              state.gameOver = true;
+              state.soundQueue.push({ type: 'gameOver' });
+            }
           }
         }
       }

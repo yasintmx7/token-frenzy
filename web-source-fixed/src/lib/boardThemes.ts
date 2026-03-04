@@ -30,9 +30,14 @@ export interface BoardTheme {
   starsOpacity: number;
   preview: string;
   cost: number;
+  // Monetisation
+  tier: 'free' | 'coins' | 'sol';
+  solPrice?: number; // SOL amount (e.g. 0.006)
 }
 
+// Order: free → coins → sol (cheapest to most expensive within each tier)
 export const BOARD_THEMES: BoardTheme[] = [
+  // ── FREE (pass perks) ──────────────────────────────────────────────────────
   {
     id: 'neon-grid',
     name: 'Obsidian Pulse',
@@ -43,6 +48,7 @@ export const BOARD_THEMES: BoardTheme[] = [
     starsOpacity: 0.2,
     preview: neonGridBg,
     cost: 0,
+    tier: 'free',
   },
   {
     id: 'cyber-purple',
@@ -53,7 +59,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: cyberPurpleBg,
     starsOpacity: 0.3,
     preview: cyberPurpleBg,
-    cost: 5000,
+    cost: 0,
+    tier: 'free',
   },
   {
     id: 'emerald-forest',
@@ -64,8 +71,10 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: emeraldForestBg,
     starsOpacity: 0.1,
     preview: emeraldForestBg,
-    cost: 15000,
+    cost: 0,
+    tier: 'free',
   },
+  // ── COINS ─────────────────────────────────────────────────────────────────
   {
     id: 'holo-chrome',
     name: 'Prism Chrome',
@@ -75,7 +84,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: holoChromeBg,
     starsOpacity: 0,
     preview: holoChromeBg,
-    cost: 18000,
+    cost: 500000,
+    tier: 'coins',
   },
   {
     id: 'crimson-void',
@@ -86,7 +96,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: crimsonVoidBg,
     starsOpacity: 0.1,
     preview: crimsonVoidBg,
-    cost: 20000,
+    cost: 1000000,
+    tier: 'coins',
   },
   {
     id: 'sapphire-sea',
@@ -97,18 +108,8 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: sapphireSeaBg,
     starsOpacity: 0.2,
     preview: sapphireSeaBg,
-    cost: 22000,
-  },
-  {
-    id: 'void-whisper',
-    name: 'Void Whisper',
-    emoji: '⬛',
-    description: 'Dark smoke with white cosmic cracks.',
-    background: '#000000',
-    backgroundImage: voidWhisperBg,
-    starsOpacity: 0.1,
-    preview: voidWhisperBg,
-    cost: 25000,
+    cost: 2000000,
+    tier: 'coins',
   },
   {
     id: 'nebula-mist',
@@ -119,7 +120,22 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: nebulaMistBg,
     starsOpacity: 0.5,
     preview: nebulaMistBg,
-    cost: 28000,
+    cost: 5000000,
+    tier: 'coins',
+  },
+  // ── SOL ───────────────────────────────────────────────────────────────────
+  {
+    id: 'void-whisper',
+    name: 'Void Whisper',
+    emoji: '⬛',
+    description: 'Dark smoke with white cosmic cracks.',
+    background: '#000000',
+    backgroundImage: voidWhisperBg,
+    starsOpacity: 0.1,
+    preview: voidWhisperBg,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.006,
   },
   {
     id: 'carbon-weave',
@@ -130,7 +146,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: carbonWeaveBg,
     starsOpacity: 0,
     preview: carbonWeaveBg,
-    cost: 30000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.006,
   },
   {
     id: 'biolume-deep',
@@ -141,7 +159,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: biolumeDeepBg,
     starsOpacity: 0.1,
     preview: biolumeDeepBg,
-    cost: 32000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.007,
   },
   {
     id: 'marble-royal',
@@ -152,7 +172,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: marbleRoyalBg,
     starsOpacity: 0.1,
     preview: marbleRoyalBg,
-    cost: 35000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.008,
   },
   {
     id: 'mercury-flow',
@@ -163,7 +185,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: mercuryFlowBg,
     starsOpacity: 0,
     preview: mercuryFlowBg,
-    cost: 38000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.008,
   },
   {
     id: 'shadow-canyon',
@@ -174,7 +198,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: shadowCanyonBg,
     starsOpacity: 0.2,
     preview: shadowCanyonBg,
-    cost: 45000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.009,
   },
   {
     id: 'cyan-shards',
@@ -185,7 +211,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: cyanShardsBg,
     starsOpacity: 0.1,
     preview: cyanShardsBg,
-    cost: 50000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.009,
   },
   {
     id: 'amber-forge',
@@ -196,7 +224,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: amberForgeBg,
     starsOpacity: 0.1,
     preview: amberForgeBg,
-    cost: 55000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.010,
   },
   {
     id: 'scarlet-whisper',
@@ -207,7 +237,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: scarletWhisperBg,
     starsOpacity: 0.2,
     preview: scarletWhisperBg,
-    cost: 60000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.010,
   },
   {
     id: 'ruby-rift',
@@ -218,7 +250,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: rubyRiftBg,
     starsOpacity: 0.3,
     preview: rubyRiftBg,
-    cost: 75000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.011,
   },
   {
     id: 'shadow-hands',
@@ -229,7 +263,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: shadowHandsBg,
     starsOpacity: 0.1,
     preview: shadowHandsBg,
-    cost: 85000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.011,
   },
   {
     id: 'cyber-reaper',
@@ -240,7 +276,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: cyberReaperBg,
     starsOpacity: 0.4,
     preview: cyberReaperBg,
-    cost: 100000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.012,
   },
   {
     id: 'void-gaze',
@@ -251,7 +289,9 @@ export const BOARD_THEMES: BoardTheme[] = [
     backgroundImage: voidGazeBg,
     starsOpacity: 0.2,
     preview: voidGazeBg,
-    cost: 120000,
+    cost: 0,
+    tier: 'sol',
+    solPrice: 0.012,
   },
 ];
 

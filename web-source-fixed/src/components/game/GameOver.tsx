@@ -81,8 +81,10 @@ const GameOver = ({ stats, onRestart, onMenu, onViewRank, onRevive, sessionId }:
       setIsLoading(true);
       setStatus("Awaiting payment approval...");
 
-      // Send SOL via native bridge
-      await sendSol(TREASURY_WALLET, SCORE_SUBMIT_PRICE_SOL);
+      // Send SOL via native bridge if price > 0
+      if (SCORE_SUBMIT_PRICE_SOL > 0) {
+        await sendSol(TREASURY_WALLET, SCORE_SUBMIT_PRICE_SOL);
+      }
 
       setStatus("Saving score...");
 

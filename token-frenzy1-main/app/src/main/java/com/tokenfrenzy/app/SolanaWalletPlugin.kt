@@ -119,7 +119,7 @@ class SolanaWallet(private val activity: ComponentActivity) {
 
         activity.lifecycleScope.launch {
             try {
-                val lamports = (amountInSol * 1_000_000_000).toLong()
+                val lamports = kotlin.math.round(amountInSol * 1_000_000_000.0).toLong()
                 val recipientKey = SolanaPublicKey(Base58.decode(recipientAddress))
 
                 Log.d(TAG, "sendSol: fetching blockhash...")
@@ -259,7 +259,7 @@ class SolanaWallet(private val activity: ComponentActivity) {
         isMinting = true
         activity.lifecycleScope.launch {
             try {
-                val lamports = 5_000_000L  // 0.005 SOL
+                val lamports = 13_000_000L  // 0.013 SOL
                 val treasuryKey = SolanaPublicKey(Base58.decode("pR7YkBj2AsRLB7sSNJEyaSnengSF3c9UUQDH1y26NBi"))
 
                 val blockhash = withContext(Dispatchers.IO) {
